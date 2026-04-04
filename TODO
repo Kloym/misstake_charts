@@ -1,0 +1,7 @@
+sudo docker build -t mscrit-builder .
+
+sudo docker create --name extract_mscrit mscrit-builder
+
+sudo docker cp extract_mscrit:/app/dist/Mscrit_Checker.exe ./Mscrit_Checker.exe
+
+sudo docker rm extract_mscrit
