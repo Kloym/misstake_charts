@@ -50,59 +50,164 @@ def generate_html_report(errors_data, output_path):
         <meta charset="UTF-8">
         <title>Отчет по ошибкам (mscrit)</title>
         <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
-            .container { max-width: 1300px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-            h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 0; }
+            /* --- CSS ПЕРЕМЕННЫЕ (СВЕТЛАЯ ТЕМА ПО УМОЛЧАНИЮ) --- */
+            :root {
+                --bg-color: #f4f7f6;
+                --container-bg: #ffffff;
+                --text-color: #333333;
+                --text-muted: #7f8c8d;
+                --border-color: #bdc3c7;
+                --panel-bg: #e8f4f8;
+                --panel-border: #d5dbdb;
+                --table-header-bg: #3498db;
+                --table-header-text: #ffffff;
+                --table-hover: #f9fbfb;
+                --table-stripe: #fcfcfc;
+                --accent-blue: #2980b9;
+                --accent-orange: #d35400;
+                --hint-bg: #fff;
+                --hint-summary-bg: #eafaf1;
+                --hint-summary-hover: #d5f5e3;
+                --hint-text: #27ae60;
+                --input-bg: #f4f6f6;
+                --shadow: 0 8px 16px rgba(0,0,0,0.08);
+                --transition-speed: 0.3s;
+            }
+
+            /* --- ТЕМНАЯ ТЕМА --- */
+            [data-theme="dark"] {
+                --bg-color: #121212;
+                --container-bg: #1e1e1e;
+                --text-color: #e0e0e0;
+                --text-muted: #a0aab2;
+                --border-color: #333333;
+                --panel-bg: #2a2a2a;
+                --panel-border: #444444;
+                --table-header-bg: #1a1a1a;
+                --table-header-text: #bb86fc;
+                --table-hover: #2c2c2c;
+                --table-stripe: #242424;
+                --accent-blue: #64b5f6;
+                --accent-orange: #ffb74d;
+                --hint-bg: #252525;
+                --hint-summary-bg: #1e3329;
+                --hint-summary-hover: #274538;
+                --hint-text: #69f0ae;
+                --input-bg: #2c2c2c;
+                --shadow: 0 8px 16px rgba(0,0,0,0.5);
+            }
+
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                background-color: var(--bg-color); 
+                color: var(--text-color); 
+                margin: 0; 
+                padding: 30px 20px; 
+                transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease;
+            }
+            .container { 
+                max-width: 1400px; 
+                margin: 0 auto; 
+                background: var(--container-bg); 
+                padding: 30px; 
+                border-radius: 12px; 
+                box-shadow: var(--shadow); 
+                transition: background-color var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
+            }
             
-            .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #e8f4f8; padding: 15px; border-radius: 5px; }
-            .stats { font-weight: bold; color: #2980b9; font-size: 1.1em; }
+            /* --- ШАПКА И ПЕРЕКЛЮЧАТЕЛЬ --- */
+            .header-wrap {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 2px solid var(--accent-blue);
+                padding-bottom: 15px;
+                margin-bottom: 20px;
+            }
+            h1 { color: var(--text-color); margin: 0; font-size: 1.8em; }
+            
+            /* КРУТОЙ СВИТЧЕР ТЕМЫ */
+            .theme-switch-wrapper { display: flex; align-items: center; gap: 10px; }
+            .theme-switch { display: inline-block; height: 34px; position: relative; width: 66px; }
+            .theme-switch input { display: none; }
+            .slider {
+                background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; border-radius: 34px;
+            }
+            .slider:before {
+                background-color: #fff; bottom: 4px; content: "☀️"; display: flex; align-items: center; justify-content: center; font-size: 14px; height: 26px; left: 4px; position: absolute; transition: .4s; width: 26px; border-radius: 50%;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            input:checked + .slider { background-color: #34495e; }
+            input:checked + .slider:before { transform: translateX(32px); content: "🌙"; background-color: #1e1e1e; }
+            
+            /* --- ПАНЕЛИ УПРАВЛЕНИЯ --- */
+            .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: var(--panel-bg); padding: 15px 20px; border-radius: 8px; border: 1px solid var(--panel-border); }
+            .stats { font-weight: bold; color: var(--accent-blue); font-size: 1.1em; }
             .filter-box { display: flex; align-items: center; gap: 10px; }
-            select { padding: 8px 12px; border-radius: 4px; border: 1px solid #bdc3c7; font-size: 16px; min-width: 250px; cursor: pointer; outline: none; }
+            select { padding: 10px 15px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 15px; min-width: 250px; cursor: pointer; outline: none; background: var(--input-bg); color: var(--text-color); transition: border var(--transition-speed); }
+            select:focus { border-color: var(--accent-blue); }
             
-            .export-panel { background: #fdfefe; border: 1px solid #d5dbdb; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-            .export-panel strong { color: #2c3e50; display: block; margin-bottom: 8px; }
-            .export-controls { display: flex; gap: 10px; }
-            #summaryText { flex-grow: 1; padding: 10px; border: 1px solid #bdc3c7; border-radius: 4px; background: #f4f6f6; font-family: monospace; font-size: 14px; color: #555; }
-            .btn-copy { background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-            .btn-copy:hover { background: #2ecc71; }
-            .btn-copy:active { transform: scale(0.98); }
+            .export-panel { background: var(--container-bg); border: 1px solid var(--panel-border); padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+            .export-panel strong { color: var(--text-color); display: block; margin-bottom: 12px; font-size: 1.1em;}
+            .export-controls { display: flex; gap: 12px; }
+            #summaryText { flex-grow: 1; padding: 12px 15px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--input-bg); font-family: monospace; font-size: 14px; color: var(--text-muted); outline: none; transition: color var(--transition-speed); }
+            .btn-copy { background: #27ae60; color: white; border: none; padding: 12px 25px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s; box-shadow: 0 4px 6px rgba(39, 174, 96, 0.3); }
+            .btn-copy:hover { background: #2ecc71; transform: translateY(-1px); box-shadow: 0 6px 8px rgba(39, 174, 96, 0.4); }
+            .btn-copy:active { transform: translateY(1px); box-shadow: 0 2px 4px rgba(39, 174, 96, 0.3); }
             
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background-color: #3498db; color: white; position: sticky; top: 0; z-index: 10; }
-            tr:hover { background-color: #f1f1f1; }
+            /* --- ТАБЛИЦА --- */
+            table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid var(--panel-border); }
+            th, td { padding: 14px 18px; text-align: left; border-bottom: 1px solid var(--panel-border); transition: background-color var(--transition-speed); }
+            th { background-color: var(--table-header-bg); color: var(--table-header-text); position: sticky; top: 0; z-index: 10; font-weight: 600; text-transform: uppercase; font-size: 0.9em; letter-spacing: 0.5px; }
+            tbody tr:nth-child(even) { background-color: var(--table-stripe); }
+            tbody tr:hover { background-color: var(--table-hover); }
+            tbody tr:last-child td { border-bottom: none; }
             
-            .dept-col { font-weight: 500; color: #7f8c8d; font-size: 0.9em; }
-            .ib-col { font-weight: bold; color: #d35400; width: 12%; }
+            .dept-col { font-weight: 500; color: var(--text-muted); font-size: 0.95em; }
+            .ib-col { font-weight: bold; color: var(--accent-orange); width: 12%; font-size: 1.05em; }
             
-            .hint-wrapper { margin-top: 10px; }
-            .hint-details { background: #fdfefe; border: 1px solid #d5dbdb; border-radius: 5px; overflow: hidden; transition: all 0.3s ease; display: inline-block; min-width: 80%; }
-            .hint-details summary { background: #eafaf1; padding: 8px 12px; cursor: pointer; font-weight: 600; color: #27ae60; outline: none; user-select: none; font-size: 0.95em; }
-            .hint-details summary:hover { background: #d5f5e3; }
-            .hint-content { padding: 10px 15px; border-top: 1px solid #eaeded; background: #fff; max-height: 250px; overflow-y: auto; }
-            .hint-content ul { margin: 0; padding-left: 20px; color: #34495e; font-size: 0.9em; line-height: 1.5; }
+            /* --- ПОДСКАЗКИ --- */
+            .hint-wrapper { margin-top: 12px; }
+            .hint-details { background: var(--container-bg); border: 1px solid var(--panel-border); border-radius: 6px; overflow: hidden; display: inline-block; min-width: 85%; transition: box-shadow 0.2s; }
+            .hint-details:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+            .hint-details summary { background: var(--hint-summary-bg); padding: 10px 15px; cursor: pointer; font-weight: 600; color: var(--hint-text); outline: none; user-select: none; font-size: 0.95em; transition: background var(--transition-speed); }
+            .hint-details summary:hover { background: var(--hint-summary-hover); }
+            .hint-content { padding: 12px 18px; border-top: 1px solid var(--panel-border); background: var(--hint-bg); max-height: 250px; overflow-y: auto; }
+            .hint-content ul { margin: 0; padding-left: 20px; color: var(--text-color); font-size: 0.95em; line-height: 1.6; }
             .hint-content li { margin-bottom: 6px; }
             .hl-diag { color: #8e44ad; font-weight: bold; }
-            .hl-oper { color: #2980b9; font-weight: bold; }
-            .no-hint { color: #e74c3c; font-size: 0.9em; display: inline-block; margin-top: 5px; background: #fadbd8; padding: 4px 8px; border-radius: 4px;}
+            [data-theme="dark"] .hl-diag { color: #d7b4f3; }
+            .hl-oper { color: var(--accent-blue); font-weight: bold; }
+            .no-hint { color: #e74c3c; font-size: 0.9em; display: inline-block; margin-top: 5px; background: rgba(231, 76, 60, 0.1); padding: 6px 10px; border-radius: 4px;}
             
-            .fixed-row td { text-decoration: line-through; color: #95a5a6; background-color: #f9f9f9; }
-            .checkbox-custom { width: 20px; height: 20px; cursor: pointer; }
+            /* --- ЭЛЕМЕНТЫ UI --- */
+            .fixed-row td { text-decoration: line-through; color: var(--text-muted); background-color: var(--panel-bg); opacity: 0.6; }
+            .checkbox-custom { width: 22px; height: 22px; cursor: pointer; accent-color: var(--hint-text); }
             .hidden-row { display: none; }
             
-            .context-tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; font-weight: bold; margin-bottom: 5px; }
+            .context-tag { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
             .tag-skp { background-color: #f39c12; color: white; }
             .tag-rean { background-color: #e74c3c; color: white; }
+            .tag-missing { background-color: #9b59b6; color: white; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>📋 Отчет по ошибкам заполнения МЭС</h1>
+            <div class="header-wrap">
+                <h1>📋 Отчет по ошибкам заполнения МЭС</h1>
+                <div class="theme-switch-wrapper">
+                    <span style="font-size: 14px; font-weight: bold; color: var(--text-muted);">Тема:</span>
+                    <label class="theme-switch" for="checkbox">
+                        <input type="checkbox" id="checkbox" />
+                        <div class="slider round"></div>
+                    </label>
+                </div>
+            </div>
             
             <div class="controls">
                 <div class="stats" id="statsCount">Всего найдено ошибок: {total_errors}</div>
                 <div class="filter-box">
-                    <label for="deptFilter"><b>Отделение:</b></label>
+                    <label for="deptFilter" style="color: var(--text-muted);"><b>Отделение:</b></label>
                     <select id="deptFilter" onchange="filterTable()">
                         <option value="all">Все отделения</option>
                         {dept_options}
@@ -145,6 +250,7 @@ def generate_html_report(errors_data, output_path):
         error_text = error_text.replace("[СКП]", "<span class='context-tag tag-skp'>СКП</span>")
         error_text = error_text.replace("[СКП ЗЛ]", "<span class='context-tag tag-skp'>СКП ЗЛ</span>")
         error_text = error_text.replace("[Реанимация]", "<span class='context-tag tag-rean'>Реанимация</span>")
+        error_text = error_text.replace("🚨", "<span class='context-tag tag-missing'>Внимание</span>")
             
         safe_dept = dept.replace("'", "\\'")
             
@@ -163,12 +269,35 @@ def generate_html_report(errors_data, output_path):
         </div>
 
         <script>
+            // --- ЛОГИКА ТЕМНОЙ ТЕМЫ ---
+            const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
+            const currentTheme = localStorage.getItem('theme');
+
+            if (currentTheme) {
+                document.documentElement.setAttribute('data-theme', currentTheme);
+                if (currentTheme === 'dark') {
+                    toggleSwitch.checked = true;
+                }
+            }
+
+            function switchTheme(e) {
+                if (e.target.checked) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    localStorage.setItem('theme', 'light');
+                }    
+            }
+            toggleSwitch.addEventListener('change', switchTheme, false);
+
+
+            // --- ЛОГИКА ТАБЛИЦЫ И КОПИРОВАНИЯ ---
             let fixedIBs = new Set();
 
             function toggleFix(index, ibNumber, deptName) {
                 var row = document.getElementById('row_' + index);
                 var checkbox = document.getElementById('check_' + index);
-                
                 var entry = ibNumber + " (" + deptName + ")";
                 
                 if (checkbox.checked) {
@@ -201,11 +330,11 @@ def generate_html_report(errors_data, output_path):
                 var summaryInput = document.getElementById('summaryText');
                 if (fixedIBs.size === 0) {
                     summaryInput.value = "Поправили: (отметьте галочками исправленные ИБ)";
-                    summaryInput.style.color = "#555";
+                    summaryInput.style.color = "var(--text-muted)";
                 } else {
                     let ibArray = Array.from(fixedIBs);
                     summaryInput.value = "Поправили: " + ibArray.join(", ");
-                    summaryInput.style.color = "#2c3e50";
+                    summaryInput.style.color = "var(--text-color)";
                 }
                 document.getElementById('copyBtn').innerText = "📋 Скопировать";
             }
