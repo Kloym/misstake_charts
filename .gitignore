@@ -2,3 +2,5 @@
 input_data/
 references/
 Mscrit_Checker.exe
+__pycache__/
+.pytest_cache/

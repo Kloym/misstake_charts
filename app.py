@@ -279,15 +279,15 @@ def _get_hints_for_reeskp(mes_code, ref_reeskp):
     hints = [f"<li><b>Допустимый диагноз (СКП):</b> <span class='hl-diag'>{mkb}</span></li>" for mkb in unique_mkb[:15]]
     return f'<details class="hint-details"><summary>💡 Показать допустимые диагнозы СКП ({len(unique_mkb)})</summary><div class="hint-content"><ul>{"".join(hints)}</ul></div></details>'
 
-def _get_hints_for_mscrit(mes_code, ref_mscrit, mkb_code=None, mkb_base=None):
+def _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs=None):
     mes_code_str = str(mes_code).strip()
     valid_mes = ref_mscrit[ref_mscrit['temp_mes_str'] == mes_code_str]
     
     if valid_mes.empty:
         return "<span class='no-hint'>Для этого МЭС операции в справочнике не предусмотрены.</span>"
         
-    if mkb_code and mkb_base:
-        valid_mkb = valid_mes[valid_mes['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])]
+    if search_mkbs:
+        valid_mkb = valid_mes[valid_mes['Код диагноза'].isin(search_mkbs)]
         if not valid_mkb.empty:
             unique_ops = valid_mkb['Код хирургической операции'].drop_duplicates().head(15)
             hints = []
@@ -356,6 +356,18 @@ def _check_interruption_code(group, ib_num):
     if 'Код прерывания госпитализации' not in group.columns:
         return errors
         
+    mes_code = str(group['МЭС. Код'].iloc[0]).split('.')[0].strip()
+    patient_type = str(group['ПУМП. Тип пациента'].iloc[0]).strip().upper() if 'ПУМП. Тип пациента' in group.columns else 'UNKNOWN'
+    
+    SPECIAL_PROJECT_MES = ['200531', '79550', '79018', '200627', '79008', '66213', '66212', '200031', '200510', '66275', '200625', '200664', '200667', '72044', '200088', '72039', '76951', '76242', '82031', '82043', '82044', '82045', '82055', '200665', '200711']
+
+    if mes_code in SPECIAL_PROJECT_MES:
+        if patient_type != 'ЗЛ':
+            errors.append(f"ИБ {ib_num}: Недопустимый МЭС: спецпроект <b>{mes_code}</b> разрешен только для пациентов '<b>ЗЛ</b>' (у вас '<b>{patient_type}</b>').")
+    elif mes_code.startswith('200'):
+        if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ']:
+            errors.append(f"ИБ {ib_num}: Недопустимый МЭС: МЭС <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
+
     unique_movs = group.drop_duplicates(subset=['Дата поступления', 'Отделение', 'Код прерывания госпитализации'])
     sorted_group = unique_movs.sort_values(by='Дата поступления').dropna(subset=['Код прерывания госпитализации'])
     
@@ -364,18 +376,25 @@ def _check_interruption_code(group, ib_num):
 
     if len(sorted_group) > 1:
         for idx in range(len(sorted_group) - 1):
-            code = str(sorted_group.iloc[idx]['Код прерывания госпитализации']).split('.')[0]
-            if code != '7' and code.lower() != 'nan':
+            code = str(sorted_group.iloc[idx]['Код прерывания госпитализации']).split('.')[0].strip().upper()
+            if code != '7' and code != 'NAN':
                 errors.append(f"ИБ {ib_num}: Множественные переводы: промежуточные коды прерывания должны быть строго '<b>7</b>', а в выписке №{idx+1} указан '<b>{code}</b>'.")
-    
+
     last_row = sorted_group.iloc[-1]
     last_dept = str(last_row.get('Отделение', '')).lower()
-    last_code = str(last_row['Код прерывания госпитализации']).split('.')[0]
+    last_code = str(last_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
     
-    if 'реанимац' in last_dept and last_code.lower() != 'nan':
-        if last_code not in ['3', '5']:
-            errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации, ожидался код '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
-            
+    if last_code != 'NAN':
+        if mes_code in SPECIAL_PROJECT_MES:
+            if last_code not in ['S', 'С']:
+                errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код последнего движения должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
+        elif mes_code.startswith('200'):
+            if last_code not in ['V', 'В']:
+                errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС <b>{mes_code}</b> код последнего движения должен быть '<b>V</b>', а указан '<b>{last_code}</b>'.")
+        elif 'реанимац' in last_dept:
+            if last_code not in ['3', '5']:
+                errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации, ожидался код '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
+                
     return errors
 
 # --- ЛОГИКА ИСКЛЮЧЕНИЙ И ПАЦИЕНТОВ ---
@@ -394,53 +413,76 @@ def check_reanimation_logic(group, ib_num):
         if rean_rows.empty:
             rean_rows = unique_movs 
             
-        total_days = 0
+        total_hours = 0
         has_dates = False
         
         for _, row in rean_rows.iterrows():
             if pd.notna(row['Дата поступления']) and pd.notna(row['Дата выбытия']):
                 d_in = pd.to_datetime(row['Дата поступления'], dayfirst=True)
                 d_out = pd.to_datetime(row['Дата выбытия'], dayfirst=True)
-                days = (d_out - d_in).days
-                if days < 0: days = 0
-                total_days += days
+                hours = (d_out - d_in).total_seconds() / 3600.0
+                if hours < 0: hours = 0
+                total_hours += hours
                 has_dates = True
                 
         if not has_dates:
-            return [f"ИБ {ib_num}: [Реанимация] Нет данных о дате поступления/выбытия, невозможно рассчитать дни."]
-            
-        days = total_days
+            return [f"ИБ {ib_num}: [Реанимация] Нет данных о дате поступления/выбытия, невозможно рассчитать время."]
+
+        days = int(total_hours // 24)
         
-        if days <= 2: expected_codes = ['083010', '183010', '83010']
-        elif 3 <= days <= 4: expected_codes = ['083020', '183020', '83020']
-        elif 5 <= days <= 6: expected_codes = ['083030', '183030', '83030']
-        elif 7 <= days <= 8: expected_codes = ['083040', '183040', '83040']
-        else: expected_codes = ['083050', '183050', '83050']
+        if total_hours < 12:
+            expected_codes = ['056029', '56029']
+            time_str = f"{round(total_hours, 1)} часов"
+        elif days <= 2:
+            expected_codes = ['083010', '183010', '83010']
+            time_str = f"{round(total_hours, 1)} часов (до 2 дней)" if days == 0 else f"{days} дней"
+        elif 3 <= days <= 4:
+            expected_codes = ['083020', '183020', '83020']
+            time_str = f"{days} дней"
+        elif 5 <= days <= 6:
+            expected_codes = ['083030', '183030', '83030']
+            time_str = f"{days} дней"
+        elif 7 <= days <= 8:
+            expected_codes = ['083040', '183040', '83040']
+            time_str = f"{days} дней"
+        else:
+            expected_codes = ['083050', '183050', '83050']
+            time_str = f"{days} дней"
             
         if mes_code not in expected_codes:
-            errors.append(f"ИБ {ib_num}: [Реанимация] Пациент лежал <b>{days}</b> дней. По правилам ожидался один из МЭС: <b>{expected_codes}</b>, но у вас указан <b>'{mes_code}'</b>.")
+            errors.append(f"ИБ {ib_num}: [Реанимация] Пациент лежал <b>{time_str}</b>. По правилам ожидался один из МЭС: <b>{expected_codes}</b>, но у вас указан <b>'{mes_code}'</b>.")
             
     except Exception as e:
-        errors.append(f"ИБ {ib_num}: [Реанимация] Программная ошибка при расчете дат ({e}).")
+        errors.append(f"ИБ {ib_num}: [Реанимация] Программная ошибка при расчете времени ({e}).")
         
     return errors
 
-def check_nil_patient(group, ref_msmkbe, ref_mscrit):
+def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
     errors = []
     mes_code = str(group['МЭС. Код'].iloc[0]).split('.')[0].strip()
     mkb_code = str(group['Диагноз. МКБ-10'].iloc[0]).strip().upper()
     mkb_base = mkb_code.split('.')[0]
     ib_num = group['ИБ_clean'].iloc[0]
+    department = str(group['Отделение'].iloc[0]).strip().lower()
     canal = group['Канал по ДЗМ-56'].iloc[0]
     mes_name = str(group['МЭС. Название'].iloc[0]).lower()
-    department = str(group['Отделение'].iloc[0]).strip().lower()
-    
     is_skp = 'стационар кратковременного пребывания' in mes_name
+    
+    search_mkbs = [mkb_code, 'XXX.X', 'ХХХ.Х']
+    is_invalid_extension = False
+    
+    if mkb_code in ref_mkb10['Шифр'].values:
+        search_mkbs.append(mkb_base)
+    elif '.' in mkb_code and mkb_base in ref_mkb10['Шифр'].values:
+        is_invalid_extension = True
+        
+    diag_err_reason = f"расширение <b>{mkb_code}</b> не предусмотрено справочником МКБ-10 (используйте базовый <b>{mkb_base}</b>)" if is_invalid_extension else f"указанный МКБ <b>{mkb_code}</b> не подходит для МЭС <b>{mes_code}</b>"
+    
     has_diag_error = False
     
     msmkbe_match = ref_msmkbe[
         (ref_msmkbe['Код медицинской услуги'] == mes_code) & 
-        (ref_msmkbe['Код диагноза (шифр по МКБ-10)'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х']))
+        (ref_msmkbe['Код диагноза (шифр по МКБ-10)'].isin(search_mkbs))
     ]
     if msmkbe_match.empty:
         has_diag_error = True
@@ -448,7 +490,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit):
         if not mes_exists:
             error_msg = f"ИБ {ib_num}: Базовая проверка: МЭС <b>{mes_code}</b> не найден в справочнике msmkbe."
         else:
-            error_msg = f"ИБ {ib_num}: Базовая проверка диагноза: указанный МКБ <b>{mkb_code}</b> не подходит для МЭС <b>{mes_code}</b>."
+            error_msg = f"ИБ {ib_num}: Базовая проверка диагноза: {diag_err_reason}."
             
         if department in DIFFICULT_DEPARTMENTS:
             hint_html = _get_hints_for_msmkbe(mes_code, ref_msmkbe)
@@ -464,7 +506,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit):
         anesth = str(row.get('Анестезия', '')).strip()
         interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
-        if op_code.lower() in ['nan', '', 'a00.00'] or interruption == '9':
+        if op_code.lower() in ['nan', ''] or interruption == '9':
             continue
             
         sig = (op_code, op_type, anesth)
@@ -475,7 +517,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit):
     if performed_ops:
         a00_match = ref_mscrit[
             (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-            (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])) &
+            (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
             (ref_mscrit['Код хирургической операции'] == 'A00.00')
         ]
         
@@ -489,7 +531,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit):
                 op_code = str(row['Код']).strip()
                 mscrit_match = ref_mscrit[
                     (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-                    (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])) &
+                    (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
                     (ref_mscrit['Код хирургической операции'] == op_code)
                 ]
                 if not mscrit_match.empty:
@@ -509,7 +551,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit):
             op_codes_str = ", ".join(sorted(list(set([str(r['Код']).strip() for r in performed_ops]))))
             error_msg = f"ИБ {ib_num}: Ошибка операции: ни одна из проведенных операций (<b>{op_codes_str}</b>) не предусмотрена справочником mscrit для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b>."
             if department in DIFFICULT_DEPARTMENTS:
-                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, mkb_code, mkb_base)
+                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
         else:
@@ -531,7 +573,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit):
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
 
-def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
+def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
     errors = []
     mes_code = str(group['МЭС. Код'].iloc[0]).split('.')[0].strip()
     mkb_code = str(group['Диагноз. МКБ-10'].iloc[0]).strip().upper()
@@ -541,13 +583,23 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
     mes_name = str(group['МЭС. Название'].iloc[0]).lower()
     department = str(group['Отделение'].iloc[0]).strip().lower()
     
+    search_mkbs = [mkb_code, 'XXX.X', 'ХХХ.Х']
+    is_invalid_extension = False
+    
+    if mkb_code in ref_mkb10['Шифр'].values:
+        search_mkbs.append(mkb_base)
+    elif '.' in mkb_code and mkb_base in ref_mkb10['Шифр'].values:
+        is_invalid_extension = True
+        
+    diag_err_reason = f"расширение <b>{mkb_code}</b> не предусмотрено справочником МКБ-10 (используйте базовый <b>{mkb_base}</b>)" if is_invalid_extension else f"указанный МКБ <b>{mkb_code}</b> не подходит для МЭС <b>{mes_code}</b>"
+    
     is_skp = 'стационар кратковременного пребывания' in mes_name
     has_diag_error = False
 
     if is_skp:
         reeskp_match = ref_reeskp[
             (ref_reeskp['Код услуги'] == mes_code) & 
-            (ref_reeskp['код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х']))
+            (ref_reeskp['код диагноза'].isin(search_mkbs))
         ]
         if reeskp_match.empty:
             has_diag_error = True
@@ -555,7 +607,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
             if not mes_exists:
                 error_msg = f"ИБ {ib_num}: [СКП] Базовая проверка: МЭС <b>{mes_code}</b> не найден в справочнике reeskp."
             else:
-                error_msg = f"ИБ {ib_num}: [СКП] Проверка диагноза: для стационара кратковременного пребывания диагноз <b>{mkb_code}</b> не подходит под МЭС <b>{mes_code}</b>."
+                error_msg = f"ИБ {ib_num}: [СКП] Проверка диагноза: для стационара кратковременного пребывания {diag_err_reason}."
                 
             if department in DIFFICULT_DEPARTMENTS:
                 hint_html = _get_hints_for_reeskp(mes_code, ref_reeskp)
@@ -568,7 +620,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
     else:
         mscrit_base_match = ref_mscrit[
             (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-            (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х']))
+            (ref_mscrit['Код диагноза'].isin(search_mkbs))
         ]
         if mscrit_base_match.empty:
             has_diag_error = True
@@ -576,7 +628,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
             if not mes_exists:
                 error_msg = f"ИБ {ib_num}: Базовая проверка: МЭС <b>{mes_code}</b> не найден в справочнике mscrit."
             else:
-                error_msg = f"ИБ {ib_num}: Базовая проверка диагноза: указанный МКБ <b>{mkb_code}</b> не подходит для МЭС <b>{mes_code}</b>."
+                error_msg = f"ИБ {ib_num}: Базовая проверка диагноза: {diag_err_reason}."
                 
             if department in DIFFICULT_DEPARTMENTS:
                 hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit)
@@ -592,7 +644,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
         anesth = str(row.get('Анестезия', '')).strip()
         interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
-        if op_code.lower() in ['nan', '', 'a00.00'] or interruption == '9':
+        if op_code.lower() in ['nan', ''] or interruption == '9':
             continue
             
         sig = (op_code, op_type, anesth)
@@ -603,7 +655,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
     if performed_ops:
         a00_match = ref_mscrit[
             (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-            (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])) &
+            (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
             (ref_mscrit['Код хирургической операции'] == 'A00.00')
         ]
         
@@ -617,7 +669,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
                 op_code = str(row['Код']).strip()
                 mscrit_match = ref_mscrit[
                     (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-                    (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])) &
+                    (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
                     (ref_mscrit['Код хирургической операции'] == op_code)
                 ]
                 if not mscrit_match.empty:
@@ -637,7 +689,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
             op_codes_str = ", ".join(sorted(list(set([str(r['Код']).strip() for r in performed_ops]))))
             error_msg = f"ИБ {ib_num}: Ошибка операции: ни одна из проведенных операций (<b>{op_codes_str}</b>) не предусмотрена справочником mscrit для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b>."
             if department in DIFFICULT_DEPARTMENTS:
-                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, mkb_code, mkb_base)
+                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
         else:
@@ -659,7 +711,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
 
-def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
+def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
     errors = []
     mes_code = str(group['МЭС. Код'].iloc[0]).split('.')[0].strip()
     mkb_code = str(group['Диагноз. МКБ-10'].iloc[0]).strip().upper()
@@ -669,13 +721,23 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
     mes_name = str(group['МЭС. Название'].iloc[0]).lower()
     department = str(group['Отделение'].iloc[0]).strip().lower()
     
+    search_mkbs = [mkb_code, 'XXX.X', 'ХХХ.Х']
+    is_invalid_extension = False
+    
+    if mkb_code in ref_mkb10['Шифр'].values:
+        search_mkbs.append(mkb_base)
+    elif '.' in mkb_code and mkb_base in ref_mkb10['Шифр'].values:
+        is_invalid_extension = True
+        
+    diag_err_reason = f"расширение <b>{mkb_code}</b> не предусмотрено справочником МКБ-10 (используйте базовый <b>{mkb_base}</b>)" if is_invalid_extension else f"указанный МКБ <b>{mkb_code}</b> не подходит для МЭС <b>{mes_code}</b>"
+
     is_skp = 'стационар кратковременного пребывания' in mes_name
     has_diag_error = False
 
     if is_skp:
         reeskp_match = ref_reeskp[
             (ref_reeskp['Код услуги'] == mes_code) & 
-            (ref_reeskp['код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х']))
+            (ref_reeskp['код диагноза'].isin(search_mkbs))
         ]
         if reeskp_match.empty:
             has_diag_error = True
@@ -683,20 +745,18 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
             if not mes_exists:
                 error_msg = f"ИБ {ib_num}: [СКП ЗЛ] Базовая проверка: МЭС <b>{mes_code}</b> не найден в справочнике reeskp."
             else:
-                error_msg = f"ИБ {ib_num}: [СКП ЗЛ] Проверка диагноза: для стационара кратковременного пребывания диагноз <b>{mkb_code}</b> не подходит под МЭС <b>{mes_code}</b>."
+                error_msg = f"ИБ {ib_num}: [СКП ЗЛ] Проверка диагноза: для стационара кратковременного пребывания {diag_err_reason}."
                 
             if department in DIFFICULT_DEPARTMENTS:
                 hint_html = _get_hints_for_reeskp(mes_code, ref_reeskp)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
         else:
-            priznak = reeskp_match.iloc[0]['Признак оплаты иногородним']
-            if priznak != 0:
-                errors.append(f"ИБ {ib_num}: [СКП ЗЛ] Ошибка признака оплаты: для застрахованных лиц (ЗЛ) он должен быть '<b>0</b>', а у вас стоит '<b>{priznak}</b>'.")
+            pass
     else:
         mscrit_base_match = ref_mscrit[
             (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-            (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х']))
+            (ref_mscrit['Код диагноза'].isin(search_mkbs))
         ]
         if mscrit_base_match.empty:
             has_diag_error = True
@@ -704,7 +764,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
             if not mes_exists:
                 error_msg = f"ИБ {ib_num}: Базовая проверка: МЭС <b>{mes_code}</b> не найден в справочнике mscrit."
             else:
-                error_msg = f"ИБ {ib_num}: Базовая проверка диагноза: указанный МКБ <b>{mkb_code}</b> не подходит для МЭС <b>{mes_code}</b>."
+                error_msg = f"ИБ {ib_num}: Базовая проверка диагноза: {diag_err_reason}."
                 
             if department in DIFFICULT_DEPARTMENTS:
                 hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit)
@@ -720,7 +780,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
         anesth = str(row.get('Анестезия', '')).strip()
         interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
-        if op_code.lower() in ['nan', '', 'a00.00'] or interruption == '9':
+        if op_code.lower() in ['nan', ''] or interruption == '9':
             continue
             
         sig = (op_code, op_type, anesth)
@@ -731,7 +791,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
     if performed_ops:
         a00_match = ref_mscrit[
             (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-            (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])) &
+            (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
             (ref_mscrit['Код хирургической операции'] == 'A00.00')
         ]
         
@@ -745,7 +805,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
                 op_code = str(row['Код']).strip()
                 mscrit_match = ref_mscrit[
                     (ref_mscrit['Код медицинской услуги'] == mes_code) & 
-                    (ref_mscrit['Код диагноза'].isin([mkb_code, mkb_base, 'XXX.X', 'ХХХ.Х'])) &
+                    (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
                     (ref_mscrit['Код хирургической операции'] == op_code)
                 ]
                 if not mscrit_match.empty:
@@ -765,7 +825,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp):
             op_codes_str = ", ".join(sorted(list(set([str(r['Код']).strip() for r in performed_ops]))))
             error_msg = f"ИБ {ib_num}: Ошибка операции: ни одна из проведенных операций (<b>{op_codes_str}</b>) не предусмотрена справочником mscrit для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b>."
             if department in DIFFICULT_DEPARTMENTS:
-                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, mkb_code, mkb_base)
+                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
         else:
@@ -820,12 +880,14 @@ def main():
         msmkbe_file = os.path.join(REF_DIR, 'msmkbe_.csv')
         mscrit_file = os.path.join(REF_DIR, 'mscrit_.csv')
         reeskp_file = os.path.join(REF_DIR, 'reeskp_.csv')
+        mkb10_file = os.path.join(REF_DIR, 'mkb10__.csv')
         
         df_merged = load_and_merge_data(mov_file, disch_file, op_file)
         
         ref_msmkbe = pd.read_csv(msmkbe_file, sep=';', encoding='windows-1251') 
         ref_mscrit = pd.read_csv(mscrit_file, sep=';', encoding='windows-1251')
         ref_reeskp = pd.read_csv(reeskp_file, sep=';', encoding='windows-1251')
+        ref_mkb10 = pd.read_csv(mkb10_file, sep=';', encoding='windows-1251')
         
         ref_msmkbe['Код медицинской услуги'] = ref_msmkbe['Код медицинской услуги'].astype(str).str.split('.').str[0].str.strip()
         ref_msmkbe['Код диагноза (шифр по МКБ-10)'] = ref_msmkbe['Код диагноза (шифр по МКБ-10)'].astype(str).str.strip().str.upper()
@@ -837,10 +899,12 @@ def main():
         
         ref_reeskp['Код услуги'] = ref_reeskp['Код услуги'].astype(str).str.split('.').str[0].str.strip()
         ref_reeskp['код диагноза'] = ref_reeskp['код диагноза'].astype(str).str.strip().str.upper()
+
+        ref_mkb10['Шифр'] = ref_mkb10['Шифр'].astype(str).str.strip().str.upper()
         
         all_errors = []
         
-        reanimation_target_codes = ['083010', '083020', '083030', '083040', '083050', '183010', '183020', '183030', '183040', '183050', '83010', '83020', '83030', '83040', '83050']
+        reanimation_target_codes = ['056029', '56029', '083010', '083020', '083030', '083040', '083050', '183010', '183020', '183030', '183040', '183050', '83010', '83020', '83030', '83040', '83050']
         
         grouped = df_merged.groupby('ИБ_clean')
         print(f"Обнаружено пациентов (ИБ): {len(grouped)}. Начинаю проверку...")
@@ -859,11 +923,11 @@ def main():
             if 'реанимация' in mes_name or mes_code in reanimation_target_codes:
                 temp_errors = check_reanimation_logic(group, ib)
             elif patient_type == 'НИЛ':
-                temp_errors = check_nil_patient(group, ref_msmkbe, ref_mscrit)
+                temp_errors = check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10)
             elif patient_type in ['ИН', 'ИНОГОРОДНИЙ']: 
-                temp_errors = check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp)
+                temp_errors = check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10)
             elif patient_type == 'ЗЛ':
-                temp_errors = check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp)
+                temp_errors = check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10)
             else:
                 temp_errors.append(f"ИБ {ib}: Невозможно классифицировать пациента (тип: <b>'{patient_type}'</b>).")
                 
