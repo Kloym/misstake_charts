@@ -563,43 +563,52 @@ def check_reanimation_logic(group, ib_num):
         for _, row in rean_rows.iterrows():
             mes_code = str(row.get('МЭС. Код', group['МЭС. Код'].iloc[0])).split('.')[0].strip()
 
-            reanimation_target_codes = ['053029', '53029', '056029', '56029', '083010', '083020', '083030', '083040', '083050', '183010', '183020', '183030', '183040', '183050', '83010', '83020', '83030', '83040', '83050']
+            reanimation_target_codes = ['056029', '56029', '083010', '083020', '083030', '083040', '083050', '183010', '83010', '83020', '83030', '83040', '83050']
             if mes_code not in reanimation_target_codes:
                 continue
-                
+
+            if mes_code.startswith('183'):
+                if mes_code != '183010':
+                    dept = str(row.get('Отделение', 'Реанимации'))
+                    errors.append(f"ИБ {ib_num}: [Реанимация новорожденных] В '{dept}' допускается только МЭС <b>183010</b>, но у вас указан <b>'{mes_code}'</b>.")
+
+                continue 
+
             if pd.notna(row['Дата поступления']) and pd.notna(row['Дата выбытия']):
                 d_in = pd.to_datetime(row['Дата поступления'], dayfirst=True)
                 d_out = pd.to_datetime(row['Дата выбытия'], dayfirst=True)
-                
+
                 hours = (d_out - d_in).total_seconds() / 3600.0
                 if hours <= 0: 
                     continue
 
-                days = math.ceil(hours / 24.0)
-                
+                days = (d_out.date() - d_in.date()).days
+                if days == 0:
+                    days = 1
+
                 if hours < 12:
                     expected_codes = ['053029', '53029', '056029', '56029']
                     time_str = f"{round(hours, 1)} часов"
                 elif days <= 2:
-                    expected_codes = ['083010', '183010', '83010']
-                    time_str = f"{round(hours, 1)} часов (до 2 дней)" if days == 1 else f"{days} дней"
+                    expected_codes = ['083010', '83010']
+                    time_str = f"{days} дней"
                 elif 3 <= days <= 4:
-                    expected_codes = ['083020', '183020', '83020']
-                    time_str = f"более 48 часов ({days} дн.)"
+                    expected_codes = ['083020', '83020']
+                    time_str = f"{days} дней"
                 elif 5 <= days <= 6:
-                    expected_codes = ['083030', '183030', '83030']
+                    expected_codes = ['083030', '83030']
                     time_str = f"{days} дней"
                 elif 7 <= days <= 8:
-                    expected_codes = ['083040', '183040', '83040']
+                    expected_codes = ['083040', '83040']
                     time_str = f"{days} дней"
                 else:
-                    expected_codes = ['083050', '183050', '83050']
+                    expected_codes = ['083050', '83050']
                     time_str = f"{days} дней"
                     
                 if mes_code not in expected_codes:
                     dept = str(row.get('Отделение', 'Реанимации'))
-                    errors.append(f"ИБ {ib_num}: [Реанимация] В {dept} пациент находился <b>{time_str}</b>. По правилам ожидался один из МЭС: <b>{expected_codes}</b>, но у вас указан <b>'{mes_code}'</b>.")
-                    
+                    errors.append(f"ИБ {ib_num}: [Реанимация] В '{dept}' пациент находился <b>{time_str}</b>. По правилам ожидался один из МЭС: <b>{expected_codes}</b>, но у вас указан <b>'{mes_code}'</b>.")
+
     except Exception as e:
         errors.append(f"ИБ {ib_num}: [Реанимация] Программная ошибка при расчете времени ({e}).")
         
