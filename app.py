@@ -42,198 +42,132 @@ def debug_print(msg):
 
 def generate_html_report(errors_data, output_path):
     unique_depts = sorted(list(set([err['department'] for err in errors_data])))
-    options_html = "".join([f'<option value="{d}">{d}</option>' for d in unique_depts])
+    dept_checkboxes = ""
+    for d in unique_depts:
+        safe_val = d.replace('"', '&quot;')
+        dept_checkboxes += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb" onchange="filterTable()"> {d}</label></li>\n'
     
-    html_content = """
+    html_content = f"""
     <!DOCTYPE html>
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
         <title>Отчет по ошибкам (mscrit)</title>
         <style>
-            /* --- CSS ПЕРЕМЕННЫЕ (СВЕТЛАЯ ТЕМА ПО УМОЛЧАНИЮ) --- */
-            :root {
-                --bg-color: #f4f7f6;
-                --container-bg: #ffffff;
-                --text-color: #333333;
-                --text-muted: #7f8c8d;
-                --border-color: #bdc3c7;
-                --panel-bg: #e8f4f8;
-                --panel-border: #d5dbdb;
-                --table-header-bg: #3498db;
-                --table-header-text: #ffffff;
-                --table-hover: #f9fbfb;
-                --table-stripe: #fcfcfc;
-                --accent-blue: #2980b9;
-                --accent-orange: #d35400;
-                --hint-bg: #fff;
-                --hint-summary-bg: #eafaf1;
-                --hint-summary-hover: #d5f5e3;
-                --hint-text: #27ae60;
-                --input-bg: #f4f6f6;
-                --shadow: 0 8px 16px rgba(0,0,0,0.08);
-                --transition-speed: 0.3s;
-            }
-
-            /* --- ТЕМНАЯ ТЕМА --- */
-            [data-theme="dark"] {
-                --bg-color: #121212;
-                --container-bg: #1e1e1e;
-                --text-color: #e0e0e0;
-                --text-muted: #a0aab2;
-                --border-color: #333333;
-                --panel-bg: #2a2a2a;
-                --panel-border: #444444;
-                --table-header-bg: #1a1a1a;
-                --table-header-text: #bb86fc;
-                --table-hover: #2c2c2c;
-                --table-stripe: #242424;
-                --accent-blue: #64b5f6;
-                --accent-orange: #ffb74d;
-                --hint-bg: #252525;
-                --hint-summary-bg: #1e3329;
-                --hint-summary-hover: #274538;
-                --hint-text: #69f0ae;
-                --input-bg: #2c2c2c;
-                --shadow: 0 8px 16px rgba(0,0,0,0.5);
-            }
-
-            body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                background-color: var(--bg-color); 
-                color: var(--text-color); 
-                margin: 0; 
-                padding: 30px 20px; 
-                transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease;
-            }
-            .container { 
-                max-width: 1400px; 
-                margin: 0 auto; 
-                background: var(--container-bg); 
-                padding: 30px; 
-                border-radius: 12px; 
-                box-shadow: var(--shadow); 
-                transition: background-color var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
-            }
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 30px 20px; }}
+            .container {{ max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
             
-            /* --- ШАПКА И ПЕРЕКЛЮЧАТЕЛЬ --- */
-            .header-wrap {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                border-bottom: 2px solid var(--accent-blue);
-                padding-bottom: 15px;
-                margin-bottom: 20px;
-            }
-            h1 { color: var(--text-color); margin: 0; font-size: 1.8em; }
+            /* --- ШАПКА И ПАНЕЛИ ФИЛЬТРОВ --- */
+            h1 {{ margin: 0 0 20px 0; font-size: 1.5em; color: #2c3e50; }}
             
-            /* КРУТОЙ СВИТЧЕР ТЕМЫ */
-            .theme-switch-wrapper { display: flex; align-items: center; gap: 10px; }
-            .theme-switch { display: inline-block; height: 34px; position: relative; width: 66px; }
-            .theme-switch input { display: none; }
-            .slider {
-                background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; border-radius: 34px;
-            }
-            .slider:before {
-                background-color: #fff; bottom: 4px; content: "☀️"; display: flex; align-items: center; justify-content: center; font-size: 14px; height: 26px; left: 4px; position: absolute; transition: .4s; width: 26px; border-radius: 50%;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            }
-            input:checked + .slider { background-color: #34495e; }
-            input:checked + .slider:before { transform: translateX(32px); content: "🌙"; background-color: #1e1e1e; }
+            .controls {{ background: #fdfdfd; padding: 15px; border-radius: 6px; border: 1px solid #e0e0e0; margin-bottom: 20px; }}
+            .stats {{ font-weight: bold; color: #3498db; font-size: 1.1em; margin-bottom: 15px; }}
             
-            /* --- ПАНЕЛИ УПРАВЛЕНИЯ --- */
-            .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: var(--panel-bg); padding: 15px 20px; border-radius: 8px; border: 1px solid var(--panel-border); }
-            .stats { font-weight: bold; color: var(--accent-blue); font-size: 1.1em; }
-            .filter-box { display: flex; align-items: center; gap: 10px; }
-            select { padding: 10px 15px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 15px; min-width: 250px; cursor: pointer; outline: none; background: var(--input-bg); color: var(--text-color); transition: border var(--transition-speed); }
-            select:focus { border-color: var(--accent-blue); }
+            .filters-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }}
+            .filter-group {{ display: flex; flex-direction: column; gap: 5px; }}
+            .filter-group label {{ font-size: 0.85em; font-weight: 600; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; }}
+            input[type="text"] {{ padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; outline: none; }}
+            input[type="text"]:focus {{ border-color: #3498db; }}
             
-            .export-panel { background: var(--container-bg); border: 1px solid var(--panel-border); padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-            .export-panel strong { color: var(--text-color); display: block; margin-bottom: 12px; font-size: 1.1em;}
-            .export-controls { display: flex; gap: 12px; }
-            #summaryText { flex-grow: 1; padding: 12px 15px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--input-bg); font-family: monospace; font-size: 14px; color: var(--text-muted); outline: none; transition: color var(--transition-speed); }
-            .btn-copy { background: #27ae60; color: white; border: none; padding: 12px 25px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s; box-shadow: 0 4px 6px rgba(39, 174, 96, 0.3); }
-            .btn-copy:hover { background: #2ecc71; transform: translateY(-1px); box-shadow: 0 6px 8px rgba(39, 174, 96, 0.4); }
-            .btn-copy:active { transform: translateY(1px); box-shadow: 0 2px 4px rgba(39, 174, 96, 0.3); }
+            /* Мультиселект отделений */
+            .dropdown-check-list {{ display: inline-block; position: relative; width: 100%; }}
+            .dropdown-check-list .anchor {{ width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; display: block; box-sizing: border-box; font-size: 14px; user-select: none; color: #333; }}
+            .dropdown-check-list .anchor:after {{ content: '▼'; float: right; font-size: 10px; color: #7f8c8d; margin-top: 4px; }}
+            .dropdown-check-list .items {{ padding: 8px; display: none; position: absolute; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 100%; box-sizing: border-box; z-index: 100; max-height: 250px; overflow-y: auto; margin: 0; list-style: none; }}
+            .dropdown-check-list.visible .items {{ display: block; }}
+            .dropdown-check-list ul.items li {{ list-style: none; margin-bottom: 5px; font-size: 13px; }}
+            .dropdown-check-list ul.items li label {{ display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px; }}
+            .dropdown-check-list ul.items li label:hover {{ background: #f4f6f6; }}
             
-            /* --- ТАБЛИЦА --- */
-            table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid var(--panel-border); }
-            th, td { padding: 14px 18px; text-align: left; border-bottom: 1px solid var(--panel-border); transition: background-color var(--transition-speed); }
-            th { background-color: var(--table-header-bg); color: var(--table-header-text); position: sticky; top: 0; z-index: 10; font-weight: 600; text-transform: uppercase; font-size: 0.9em; letter-spacing: 0.5px; }
-            tbody tr:nth-child(even) { background-color: var(--table-stripe); }
-            tbody tr:hover { background-color: var(--table-hover); }
-            tbody tr:last-child td { border-bottom: none; }
+            /* --- ПАНЕЛЬ ЭКСПОРТА --- */
+            .export-panel {{ background: #fdfdfd; border: 1px solid #e0e0e0; padding: 15px; border-radius: 6px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }}
+            .export-panel strong {{ color: #2c3e50; font-size: 1.1em; }}
+            .export-controls {{ display: flex; gap: 15px; align-items: stretch; }}
+            #summaryText {{ flex-grow: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 13px; outline: none; resize: vertical; min-height: 60px; white-space: pre; color: #555; background: #fff; }}
+            .btn-copy {{ background: #27ae60; color: white; border: none; padding: 0 20px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; white-space: nowrap; font-size: 14px; }}
+            .btn-copy:hover {{ background: #2ecc71; }}
             
-            .dept-col { font-weight: 500; color: var(--text-muted); font-size: 0.95em; }
-            .ib-col { font-weight: bold; color: var(--accent-orange); width: 12%; font-size: 1.05em; }
+            /* --- ТАБЛИЦА (КЛАССИЧЕСКИЙ СИНИЙ ДИЗАЙН) --- */
+            .table-container {{ overflow-x: auto; max-height: 65vh; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; }}
+            table {{ width: 100%; border-collapse: collapse; background: #fff; }}
+            th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }}
             
-            /* --- ПОДСКАЗКИ --- */
-            .hint-wrapper { margin-top: 12px; }
-            .hint-details { background: var(--container-bg); border: 1px solid var(--panel-border); border-radius: 6px; overflow: hidden; display: inline-block; min-width: 85%; transition: box-shadow 0.2s; }
-            .hint-details:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-            .hint-details summary { background: var(--hint-summary-bg); padding: 10px 15px; cursor: pointer; font-weight: 600; color: var(--hint-text); outline: none; user-select: none; font-size: 0.95em; transition: background var(--transition-speed); }
-            .hint-details summary:hover { background: var(--hint-summary-hover); }
-            .hint-content { padding: 12px 18px; border-top: 1px solid var(--panel-border); background: var(--hint-bg); max-height: 250px; overflow-y: auto; }
-            .hint-content ul { margin: 0; padding-left: 20px; color: var(--text-color); font-size: 0.95em; line-height: 1.6; }
-            .hint-content li { margin-bottom: 6px; }
-            .hl-diag { color: #8e44ad; font-weight: bold; }
-            [data-theme="dark"] .hl-diag { color: #d7b4f3; }
-            .hl-oper { color: var(--accent-blue); font-weight: bold; }
-            .no-hint { color: #e74c3c; font-size: 0.9em; display: inline-block; margin-top: 5px; background: rgba(231, 76, 60, 0.1); padding: 6px 10px; border-radius: 4px;}
+            th {{ background-color: #3498db; color: #ffffff; position: sticky; top: 0; z-index: 50; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
             
-            /* --- ЭЛЕМЕНТЫ UI --- */
-            .fixed-row td { text-decoration: line-through; color: var(--text-muted); background-color: var(--panel-bg); opacity: 0.6; }
-            .checkbox-custom { width: 22px; height: 22px; cursor: pointer; accent-color: var(--hint-text); }
-            .hidden-row { display: none; }
+            tbody tr:hover {{ background-color: #fcfcfc; }}
             
-            .context-tag { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .tag-skp { background-color: #f39c12; color: white; }
-            .tag-rean { background-color: #e74c3c; color: white; }
-            .tag-missing { background-color: #9b59b6; color: white; }
+            .ib-col {{ font-weight: bold; color: #d35400; font-size: 15px; }}
+            .error-col {{ color: #333; font-size: 14px; line-height: 1.5; }}
+            .error-col b {{ color: #333; }} /* Возвращаем черный цвет для жирного текста */
+            .dept-col {{ color: #7f8c8d; font-size: 13px; font-weight: 500; }}
+            
+            .fixed-row td {{ text-decoration: line-through; opacity: 0.5; background-color: #f9f9f9; }}
+            .checkbox-custom {{ width: 18px; height: 18px; cursor: pointer; accent-color: #27ae60; margin-top: 2px; }}
+            .hidden-row {{ display: none !important; }}
+            
+            .context-tag {{ display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; font-weight: bold; margin-bottom: 5px; background-color: #f39c12; color: white; }}
+            .tag-rean {{ background-color: #e74c3c; }}
+            
+            /* Подсказки */
+            .hint-details {{ margin-top: 10px; border: 1px solid #eee; border-radius: 4px; overflow: hidden; background: #fafafa; }}
+            .hint-details summary {{ padding: 8px 12px; cursor: pointer; font-weight: 600; color: #2980b9; font-size: 13px; outline: none; user-select: none; }}
+            .hint-details summary:hover {{ background: #f0f0f0; }}
+            .hint-content {{ padding: 10px 15px; border-top: 1px solid #eee; background: #fff; max-height: 250px; overflow-y: auto; font-size: 13px; color: #555; }}
+            .hint-content ul {{ margin: 0; padding-left: 20px; }}
+            .hint-content li {{ margin-bottom: 4px; }}
         </style>
     </head>
     <body>
         <div class="container">
-            <div class="header-wrap">
-                <h1>📋 Отчет по ошибкам заполнения МЭС</h1>
-                <div class="theme-switch-wrapper">
-                    <span style="font-size: 14px; font-weight: bold; color: var(--text-muted);">Тема:</span>
-                    <label class="theme-switch" for="checkbox">
-                        <input type="checkbox" id="checkbox" />
-                        <div class="slider round"></div>
-                    </label>
-                </div>
-            </div>
+            <h1>📝 Готовый ответ для оператора:</h1>
             
             <div class="controls">
-                <div class="stats" id="statsCount">Всего найдено ошибок: {total_errors}</div>
-                <div class="filter-box">
-                    <label for="deptFilter" style="color: var(--text-muted);"><b>Отделение:</b></label>
-                    <select id="deptFilter" onchange="filterTable()">
-                        <option value="all">Все отделения</option>
-                        {dept_options}
-                    </select>
+                <div class="stats-row">
+                    <div class="stats" id="statsCount">Отображено ошибок: {len(errors_data)}</div>
+                </div>
+                
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label>Отделение:</label>
+                        <div id="deptCheckList" class="dropdown-check-list" tabindex="100">
+                            <span class="anchor" onclick="toggleDeptDrop()">Выбраны все отделения</span>
+                            <ul class="items">
+                                <li><label><input type="checkbox" id="selectAllDepts" checked onchange="toggleAllDepts(this)"> <b>(Выбрать все)</b></label></li>
+                                {dept_checkboxes}
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Поиск по ИБ:</label>
+                        <input type="text" id="ibFilter" onkeyup="filterTable()" placeholder="Введите номер ИБ...">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Поиск по тексту:</label>
+                        <input type="text" id="errorFilter" onkeyup="filterTable()" placeholder="Введите текст или код ошибки...">
+                    </div>
                 </div>
             </div>
             
             <div class="export-panel">
-                <strong>📝 Готовый ответ для оператора:</strong>
                 <div class="export-controls">
-                    <input type="text" id="summaryText" readonly value="Поправили: (отметьте галочками исправленные ИБ)">
-                    <button class="btn-copy" onclick="copySummary()" id="copyBtn">📋 Скопировать</button>
+                    <textarea id="summaryText" readonly placeholder="Отметьте галочками исправленные ИБ в таблице ниже..."></textarea>
+                    <button class="btn-copy" onclick="copySummary()" id="copyBtn">Скопировать</button>
                 </div>
             </div>
             
-            <table id="errorsTable">
-                <thead>
-                    <tr>
-                        <th width="5%">Испр.</th>
-                        <th width="20%">Отделение</th>
-                        <th width="15%">Номер ИБ</th>
-                        <th>Описание ошибки / Подсказка</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div class="table-container">
+                <table id="errorsTable">
+                    <thead>
+                        <tr>
+                            <th width="5%">Испр.</th>
+                            <th width="25%">Отделение</th>
+                            <th width="15%">Номер ИБ</th>
+                            <th>Описание ошибки / Подсказка</th>
+                        </tr>
+                    </thead>
+                    <tbody>
     """
     
     for i, err_dict in enumerate(errors_data):
@@ -251,142 +185,147 @@ def generate_html_report(errors_data, output_path):
         error_text = error_text.replace("[СКП]", "<span class='context-tag tag-skp'>СКП</span>")
         error_text = error_text.replace("[СКП ЗЛ]", "<span class='context-tag tag-skp'>СКП ЗЛ</span>")
         error_text = error_text.replace("[Реанимация]", "<span class='context-tag tag-rean'>Реанимация</span>")
-        error_text = error_text.replace("🚨", "<span class='context-tag tag-missing'>Внимание</span>")
+        error_text = error_text.replace("[Реанимация новорожденных]", "<span class='context-tag tag-rean'>Реанимация новорожденных</span>")
             
+        if "<div class='hint-wrapper'>" in error_text:
+            main_err, hint_html = error_text.split("<div class='hint-wrapper'>", 1)
+            hint_html = "<div class='hint-wrapper'>" + hint_html
+        else:
+            main_err = error_text
+            hint_html = ""
+            
+        # Убрали красные рамки, оставляем чистый текст
+        styled_error = main_err
         safe_dept = dept.replace("'", "\\'")
             
         html_content += f"""
-                    <tr id="row_{i}" class="data-row" data-dept="{dept}">
-                        <td><input type="checkbox" class="checkbox-custom" id="check_{i}" onclick="toggleFix({i}, '{ib_text}', '{safe_dept}')"></td>
-                        <td class="dept-col">{dept}</td>
-                        <td class="ib-col">{ib_text}</td>
-                        <td>{error_text}</td>
-                    </tr>
+                        <tr id="row_{i}" class="data-row" data-dept="{dept}">
+                            <td><input type="checkbox" class="checkbox-custom" id="check_{i}" onclick="toggleFix({i}, '{ib_text}', '{safe_dept}')"></td>
+                            <td class="dept-col">{dept}</td>
+                            <td class="ib-col">{ib_text}</td>
+                            <td class="error-col">{styled_error}{hint_html}</td>
+                        </tr>
         """
         
     html_content += """
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <script>
-            // --- ЛОГИКА ТЕМНОЙ ТЕМЫ ---
-            const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
-            const currentTheme = localStorage.getItem('theme');
-
-            if (currentTheme) {
-                document.documentElement.setAttribute('data-theme', currentTheme);
-                if (currentTheme === 'dark') {
-                    toggleSwitch.checked = true;
+            // --- МУЛЬТИСЕЛЕКТ ОТДЕЛЕНИЙ ---
+            const checkList = document.getElementById('deptCheckList');
+            function toggleDeptDrop() {
+                checkList.classList.toggle('visible');
+            }
+            
+            document.addEventListener('click', function(event) {
+                if (!checkList.contains(event.target)) {
+                    checkList.classList.remove('visible');
                 }
+            });
+
+            function toggleAllDepts(source) {
+                const checkboxes = document.querySelectorAll('.dept-cb');
+                checkboxes.forEach(cb => cb.checked = source.checked);
+                updateDeptLabel();
+                filterTable();
             }
 
-            function switchTheme(e) {
-                if (e.target.checked) {
-                    document.documentElement.setAttribute('data-theme', 'dark');
-                    localStorage.setItem('theme', 'dark');
-                } else {
-                    document.documentElement.setAttribute('data-theme', 'light');
-                    localStorage.setItem('theme', 'light');
-                }    
+            document.querySelectorAll('.dept-cb').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    const allChecked = document.querySelectorAll('.dept-cb:checked').length === document.querySelectorAll('.dept-cb').length;
+                    document.getElementById('selectAllDepts').checked = allChecked;
+                    updateDeptLabel();
+                });
+                cb.checked = true; 
+            });
+
+            function updateDeptLabel() {
+                const total = document.querySelectorAll('.dept-cb').length;
+                const checked = document.querySelectorAll('.dept-cb:checked').length;
+                const anchor = checkList.querySelector('.anchor');
+                if (checked === total) anchor.innerText = "Выбраны все отделения";
+                else if (checked === 0) anchor.innerText = "Ничего не выбрано";
+                else anchor.innerText = `Выбрано отделений: ${checked}`;
             }
-            toggleSwitch.addEventListener('change', switchTheme, false);
 
+            // --- ФИЛЬТРАЦИЯ ТАБЛИЦЫ ---
+            function filterTable() {
+                const ibSearch = document.getElementById("ibFilter").value.toLowerCase();
+                const errSearch = document.getElementById("errorFilter").value.toLowerCase();
+                
+                const checkedDepts = Array.from(document.querySelectorAll('.dept-cb:checked')).map(cb => cb.value);
+                const rows = document.getElementsByClassName("data-row");
+                let visibleCount = 0;
+                
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const dept = row.getAttribute("data-dept");
+                    const ib = row.querySelector(".ib-col").innerText.toLowerCase();
+                    const err = row.querySelector(".error-col").innerText.toLowerCase();
+                    
+                    const matchesDept = checkedDepts.includes(dept);
+                    const matchesIB = ib.includes(ibSearch);
+                    const matchesErr = err.includes(errSearch);
+                    
+                    if (matchesDept && matchesIB && matchesErr) {
+                        row.classList.remove("hidden-row");
+                        visibleCount++;
+                    } else {
+                        row.classList.add("hidden-row");
+                    }
+                }
+                document.getElementById("statsCount").innerText = "Отображено ошибок: " + visibleCount;
+            }
 
-            // --- ЛОГИКА ТАБЛИЦЫ И КОПИРОВАНИЯ ---
-            let fixedIBs = new Set();
+            // --- ТАБЛИЦА И ЭКСПОРТ (СТОЛБИКОМ) ---
+            let fixedIBs = new Map();
 
             function toggleFix(index, ibNumber, deptName) {
-                var row = document.getElementById('row_' + index);
-                var checkbox = document.getElementById('check_' + index);
-                var entry = ibNumber + " (" + deptName + ")";
+                const row = document.getElementById('row_' + index);
+                const checkbox = document.getElementById('check_' + index);
+                
+                const textLine = ibNumber + " (" + deptName + ")";
+                const entryId = index; 
                 
                 if (checkbox.checked) {
                     row.classList.add('fixed-row');
-                    fixedIBs.add(entry);
+                    fixedIBs.set(entryId, textLine);
                 } else {
                     row.classList.remove('fixed-row');
-                    
-                    var rows = document.getElementsByClassName('data-row');
-                    var stillHasChecked = false;
-                    for(var i=0; i<rows.length; i++) {
-                        var cb = rows[i].querySelector('.checkbox-custom');
-                        var rowIb = rows[i].querySelector('.ib-col').innerText;
-                        var rowDept = rows[i].getAttribute('data-dept');
-                        var checkEntry = rowIb + " (" + rowDept + ")";
-                        
-                        if(cb.checked && checkEntry === entry) {
-                            stillHasChecked = true;
-                            break;
-                        }
-                    }
-                    if(!stillHasChecked) {
-                        fixedIBs.delete(entry);
-                    }
+                    fixedIBs.delete(entryId);
                 }
                 updateSummary();
             }
             
             function updateSummary() {
-                var summaryInput = document.getElementById('summaryText');
+                const summaryInput = document.getElementById('summaryText');
                 if (fixedIBs.size === 0) {
-                    summaryInput.value = "Поправили: (отметьте галочками исправленные ИБ)";
-                    summaryInput.style.color = "var(--text-muted)";
+                    summaryInput.value = "";
                 } else {
-                    let ibArray = Array.from(fixedIBs);
-                    summaryInput.value = "Поправили: " + ibArray.join(", ");
-                    summaryInput.style.color = "var(--text-color)";
+                    const uniqueLines = Array.from(new Set(fixedIBs.values()));
+                    summaryInput.value = uniqueLines.join("\\n");
                 }
-                document.getElementById('copyBtn').innerText = "📋 Скопировать";
             }
             
             function copySummary() {
-                if (fixedIBs.size === 0) {
-                    alert("Сначала отметьте галочками исправленные ошибки в таблице!");
-                    return;
-                }
-                var copyText = document.getElementById("summaryText");
+                if (fixedIBs.size === 0) { alert("Сначала отметьте галочками исправленные ошибки в таблице!"); return; }
+                const copyText = document.getElementById("summaryText");
                 copyText.select();
-                copyText.setSelectionRange(0, 99999); 
                 document.execCommand("copy");
-                
-                var btn = document.getElementById('copyBtn');
+                const btn = document.getElementById('copyBtn');
                 btn.innerText = "✅ Скопировано!";
-                setTimeout(function() {
-                    if(btn.innerText === "✅ Скопировано!") {
-                        btn.innerText = "📋 Скопировать";
-                    }
-                }, 2000);
-            }
-            
-            function filterTable() {
-                var filter = document.getElementById("deptFilter").value;
-                var rows = document.getElementsByClassName("data-row");
-                var visibleCount = 0;
-                
-                for (var i = 0; i < rows.length; i++) {
-                    var rowDept = rows[i].getAttribute("data-dept");
-                    if (filter === "all" || rowDept === filter) {
-                        rows[i].classList.remove("hidden-row");
-                        visibleCount++;
-                    } else {
-                        rows[i].classList.add("hidden-row");
-                    }
-                }
-                
-                var statsText = filter === "all" ? "Всего найдено ошибок: " : "Ошибок в выбранном отделении: ";
-                document.getElementById("statsCount").innerText = statsText + visibleCount;
+                setTimeout(() => btn.innerText = "Скопировать", 2000);
             }
         </script>
     </body>
     </html>
     """
     
-    final_html = html_content.replace("{total_errors}", str(len(errors_data))).replace("{dept_options}", options_html)
-    
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(final_html)
-        
+        f.write(html_content)
     print(f"\n[УСПЕХ] HTML-отчет успешно сгенерирован: {output_path}")
 
 # --- ФУНКЦИИ ГЕНЕРАЦИИ ПОДСКАЗОК ПО РАЗНЫМ СПРАВОЧНИКАМ ---
@@ -444,10 +383,9 @@ def load_and_merge_data(mov_path, disch_path, op_path):
     
     if 'Код' in df_mov.columns and 'Код прерывания госпитализации' not in df_mov.columns:
         df_mov.rename(columns={'Код': 'Код прерывания госпитализации'}, inplace=True)
-    
-    df_mov['ИБ_clean'] = df_mov['Номер ИБ'].astype(str).str.split('-').str[0].str.strip()
-    df_disch['ИБ_clean'] = df_disch['ИБ. Номер'].astype(str).str.strip()
-    df_op['ИБ_clean'] = df_op['ИБ. Номер'].astype(str).str.strip()
+    df_mov['ИБ_clean'] = df_mov['Номер ИБ'].astype(str).str.replace(r'-\d{4}', '', regex=True).str.strip()
+    df_disch['ИБ_clean'] = df_disch['ИБ. Номер'].astype(str).str.replace(r'-\d{4}', '', regex=True).str.strip()
+    df_op['ИБ_clean'] = df_op['ИБ. Номер'].astype(str).str.replace(r'-\d{4}', '', regex=True).str.strip()
     
     df_patients = pd.merge(df_mov, df_disch, on='ИБ_clean', how='inner', suffixes=('_mov', '_disch'))
     df_full = pd.merge(df_patients, df_op, on='ИБ_clean', how='left', suffixes=('', '_op'))
@@ -492,10 +430,10 @@ def _check_interruption_code(group, ib_num):
     SPECIAL_PROJECT_MES = ['200531', '79550', '79018', '200627', '79008', '66213', '66212', '200031', '200510', '66275', '200625', '200664', '200667', '72044', '200088', '72039', '76951', '76242', '82031', '82043', '82044', '82045', '82055', '200665', '200711']
 
     if mes_code in SPECIAL_PROJECT_MES:
-        if patient_type != 'ЗЛ':
-            errors.append(f"ИБ {ib_num}: Недопустимый МЭС: спецпроект <b>{mes_code}</b> разрешен только для пациентов '<b>ЗЛ</b>' (у вас '<b>{patient_type}</b>').")
+        if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
+            errors.append(f"ИБ {ib_num}: Недопустимый МЭС: спецпроект <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
     elif mes_code.startswith('200'):
-        if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ']:
+        if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
             errors.append(f"ИБ {ib_num}: Недопустимый МЭС: МЭС <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
 
     unique_movs = group.drop_duplicates(subset=['Дата поступления', 'Отделение', 'Код прерывания госпитализации'])
@@ -513,37 +451,63 @@ def _check_interruption_code(group, ib_num):
     last_row = sorted_group.iloc[-1]
     last_dept = str(last_row.get('Отделение', '')).lower()
     last_code = str(last_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
-    
+
     if last_code != 'NAN':
         if mes_code in SPECIAL_PROJECT_MES:
-            if last_code not in ['S', 'С']:
-                errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код последнего движения должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
+            if mes_code.startswith('200'):
+                if patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
+                    if last_code not in ['S', 'С', 'V', 'В']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП спецпроекта (<b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>S</b>' или '<b>V</b>', а указан '<b>{last_code}</b>'.")
+                else:
+                    if last_code not in ['S', 'С']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
+            else:
+                if patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
+                    if last_code not in ['0', 'S', 'С']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>0</b>' или '<b>S</b>', а указан '<b>{last_code}</b>'.")
+                else:
+                    if last_code not in ['S', 'С']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
+                        
         elif mes_code.startswith('200'):
             if last_code not in ['V', 'В']:
-                errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС <b>{mes_code}</b> код последнего движения должен быть '<b>V</b>', а указан '<b>{last_code}</b>'.")
+                errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП (<b>{mes_code}</b>) код последнего движения должен быть '<b>V</b>', а указан '<b>{last_code}</b>'.")
+                
         elif 'реанимац' in last_dept:
-            if last_code not in ['3', '5']:
-                errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации, ожидался код '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
+            if mes_code.startswith('183'):
+                if last_code not in ['1', '3', '5']:
+                    errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации новорожденных (МЭС {mes_code}), ожидался код '<b>1</b>', '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
+            else:
+                if last_code not in ['3', '5']:
+                    errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации, ожидался код '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
                 
     return errors
 
-def _check_department_rules(mes_code, department, ib_num):
+def _check_department_rules(group, ib_num):
     errors = []
-    dept_lower = department.lower()
 
-    if mes_code.startswith(('95', '095', '84', '084')):
-        if 'коечное отделение нп' not in dept_lower and 'диагностическ' not in dept_lower:
-            errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в Коечном отделении НП или диагностическом (у вас '<b>{department}</b>').")
+    reanimation_target_codes = ['056029', '56029']
 
-    elif mes_code.startswith('183'):
-        if 'новорожден' not in dept_lower:
-            errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в Отделении реанимации для новорожденных (у вас '<b>{department}</b>').")
+    unique_movs = group.drop_duplicates(subset=['Отделение', 'МЭС. Код'])
+    
+    for _, row in unique_movs.iterrows():
+        mes_code = str(row.get('МЭС. Код', '')).split('.')[0].strip()
+        department = str(row.get('Отделение', '')).strip()
+        dept_lower = department.lower()
 
-    elif mes_code.startswith(('83', '083')):
-        if 'реанимац' not in dept_lower:
-            errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в отделениях реанимации (у вас '<b>{department}</b>').")
-            
-    return errors
+        if mes_code.startswith(('95', '095', '84', '084')):
+            if 'коечное отделение нп' not in dept_lower and 'диагностическ' not in dept_lower:
+                errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в Коечном отделении НП или диагностическом (у вас '<b>{department}</b>').")
+
+        elif mes_code.startswith('183'):
+            if 'новорожден' not in dept_lower:
+                errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в Отделении реанимации для новорожденных (у вас '<b>{department}</b>').")
+
+        elif mes_code.startswith(('83', '083')) or mes_code in reanimation_target_codes:
+            if 'реанимац' not in dept_lower:
+                errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в отделениях реанимации (у вас '<b>{department}</b>').")
+
+    return list(dict.fromkeys(errors))
 
 # --- ЛОГИКА ИСКЛЮЧЕНИЙ И ПАЦИЕНТОВ ---
 
@@ -571,7 +535,6 @@ def check_reanimation_logic(group, ib_num):
                 if mes_code != '183010':
                     dept = str(row.get('Отделение', 'Реанимации'))
                     errors.append(f"ИБ {ib_num}: [Реанимация новорожденных] В '{dept}' допускается только МЭС <b>183010</b>, но у вас указан <b>'{mes_code}'</b>.")
-
                 continue 
 
             if pd.notna(row['Дата поступления']) and pd.notna(row['Дата выбытия']):
@@ -611,7 +574,9 @@ def check_reanimation_logic(group, ib_num):
 
     except Exception as e:
         errors.append(f"ИБ {ib_num}: [Реанимация] Программная ошибка при расчете времени ({e}).")
-        
+
+    errors.extend(_check_interruption_code(group, ib_num))
+    
     return errors
 
 def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
@@ -741,6 +706,24 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
                 hint_html = _get_hints_for_msmkbe(mes_code, ref_msmkbe)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
+        else:
+            if not is_skp:
+                mscrit_match = ref_mscrit[
+                    (ref_mscrit['Код медицинской услуги'] == mes_code) & 
+                    (ref_mscrit['Код диагноза'].isin(search_mkbs))
+                ]
+                if not mscrit_match.empty:
+                    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
+                    if a00_match.empty:
+                        error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+                        if department in DIFFICULT_DEPARTMENTS:
+                            hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                            error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+                        errors.append(error_msg)
+                    elif str(canal).strip().lower() == 'самотек':
+                        samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
+                        if samotek_val == 0:
+                            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
             
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
@@ -889,6 +872,24 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                 hint_html = _get_hints_for_reeskp(mes_code, ref_reeskp) if is_skp else _get_hints_for_mscrit(mes_code, ref_mscrit)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
+        else:
+            if not is_skp:
+                mscrit_match = ref_mscrit[
+                    (ref_mscrit['Код медицинской услуги'] == mes_code) & 
+                    (ref_mscrit['Код диагноза'].isin(search_mkbs))
+                ]
+                if not mscrit_match.empty:
+                    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
+                    if a00_match.empty:
+                        error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+                        if department in DIFFICULT_DEPARTMENTS:
+                            hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                            error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+                        errors.append(error_msg)
+                    elif str(canal).strip().lower() == 'самотек':
+                        samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
+                        if samotek_val == 0:
+                            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
             
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
@@ -1035,6 +1036,24 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                 hint_html = _get_hints_for_reeskp(mes_code, ref_reeskp) if is_skp else _get_hints_for_mscrit(mes_code, ref_mscrit)
                 error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
             errors.append(error_msg)
+        else:
+            if not is_skp:
+                mscrit_match = ref_mscrit[
+                    (ref_mscrit['Код медицинской услуги'] == mes_code) & 
+                    (ref_mscrit['Код диагноза'].isin(search_mkbs))
+                ]
+                if not mscrit_match.empty:
+                    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
+                    if a00_match.empty:
+                        error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+                        if department in DIFFICULT_DEPARTMENTS:
+                            hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                            error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+                        errors.append(error_msg)
+                    elif str(canal).strip().lower() == 'самотек':
+                        samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
+                        if samotek_val == 0:
+                            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
             
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
@@ -1099,8 +1118,15 @@ def main():
         reanimation_target_codes = ['056029', '56029', '083010', '083020', '083030', '083040', '083050', '183010', '183020', '183030', '183040', '183050', '83010', '83020', '83030', '83040', '83050']
         
         if 'Тип оплаты' in df_merged.columns:
-            excluded_types = ['ПМУ', 'ПМУ (С ФИЗ.ЛИЦОМ)']
-
+            excluded_types = [
+                'ПМУ', 
+                'ПМУ (С ФИЗ.ЛИЦОМ)', 
+                'ПМУ (С ЮР.ЛИЦОМ)', 
+                'ДМС', 
+                'БЮДЖЕТ', 
+                'ГОС. ЗАДАНИЕ'
+            ]
+            
             df_merged = df_merged[~df_merged['Тип оплаты'].astype(str).str.upper().str.strip().isin(excluded_types)]
 
         grouped = df_merged.groupby('ИБ_clean')
@@ -1108,6 +1134,13 @@ def main():
         
         for ib, group in grouped:
             patient_type = str(group['ПУМП. Тип пациента'].iloc[0]).strip().upper() if 'ПУМП. Тип пациента' in group.columns else 'UNKNOWN'
+            
+            if patient_type == 'НР':
+                mother_ib = str(ib).split('/')[0].strip()
+                if mother_ib in grouped.groups:
+                    mother_group = grouped.get_group(mother_ib)
+                    patient_type = str(mother_group['ПУМП. Тип пациента'].iloc[0]).strip().upper()
+                    
             mes_name = str(group['МЭС. Название'].iloc[0]).lower()
             mes_code = str(group['МЭС. Код'].iloc[0]).strip()
             department = str(group['Отделение'].iloc[0]).strip() 
@@ -1115,7 +1148,7 @@ def main():
             if patient_type == 'NAN' or patient_type == '':
                 continue
 
-            dept_errors = _check_department_rules(mes_code, department, ib)
+            dept_errors = _check_department_rules(group, ib)
             if dept_errors:
                 for err in dept_errors:
                     all_errors.append({'department': department, 'message': err})
@@ -1129,7 +1162,7 @@ def main():
                 temp_errors.extend(check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10))
             elif patient_type in ['ИН', 'ИНОГОРОДНИЙ']: 
                 temp_errors.extend(check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10))
-            elif patient_type == 'ЗЛ':
+            elif patient_type in ['ЗЛ', 'НР']:
                 temp_errors.extend(check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10))
             else:
                 temp_errors.append(f"ИБ {ib}: Невозможно классифицировать пациента (тип: <b>'{patient_type}'</b>).")
