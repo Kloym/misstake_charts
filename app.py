@@ -22,7 +22,7 @@ ANESTHESIA_DICT = {
     "Эпидуральная анестезия": 1,
     "Спинально-эпидуральная анастезия": 1, 
     "Спинально-эпидуральная анестезия": 1, 
-    "Проводниковая": 0,
+    "Проводниковая": 1,
     "Межфасциальная блокада": 0
 }
 
@@ -394,22 +394,23 @@ def load_and_merge_data(mov_path, disch_path, op_path):
 
 def _check_mscrit_operation_rules(op_row, mscrit_req, ib_num, canal, is_skp):
     errors = []
-    op_code = op_row['Код']
-    op_type = op_row.get('Основная/сопутст', op_row.get('Основная/сопутствующая'))
-    anesthesia_name = op_row['Анестезия']
-    
+    op_code = str(op_row.get('Код', '')).strip()
+    op_type = str(op_row.get('Основная/сопутст', op_row.get('Основная/сопутствующая', ''))).strip()
+        
     req_main = mscrit_req['Обязательность отметки операции как основной']
     if req_main == 1 and op_type != 'Основная':
         errors.append(f"ИБ {ib_num}: Статус операции: в данной связке операция <b>{op_code}</b> обязана быть 'Основной', а у вас указана '<b>{op_type}</b>'.")
+
+    anesthesia_name = str(op_row.get('Анестезия', '')).strip()
+
+    if anesthesia_name.lower() not in ['nan', 'none', '']:
+        req_anesth = mscrit_req['Код типа анестезии']
+        actual_anesth_val = ANESTHESIA_DICT.get(anesthesia_name)
         
-    req_anesth = mscrit_req['Код типа анестезии']
-    actual_anesth_val = ANESTHESIA_DICT.get(anesthesia_name)
-    
-    if actual_anesth_val is None:
-        errors.append(f"ИБ {ib_num}: Тип анестезии: указана неизвестная анестезия <b>'{anesthesia_name}'</b>. Проверьте опечатку.")
-    elif req_anesth == 1 and actual_anesth_val != 1:
-        errors.append(f"ИБ {ib_num}: Тип анестезии: для этой операции обязательна анестезия <b>1-го типа</b>, но указана <b>'{anesthesia_name}'</b> (это тип {actual_anesth_val}).")
-        
+        if actual_anesth_val is None:
+            errors.append(f"ИБ {ib_num}: Тип анестезии: указана неизвестная анестезия <b>'{anesthesia_name}'</b>. Проверьте опечатку.")
+        elif req_anesth == 1 and actual_anesth_val != 1:
+            errors.append(f"ИБ {ib_num}: Тип анестезии: для этой операции обязательна анестезия <b>Общая</b>, но у вас указана <b>'{anesthesia_name}'</b> (Это местная).")
     if not is_skp:
         samotek_allowed = mscrit_req.get('Допустимость госпитализации "самотёк"', 1)
         canal_clean = str(canal).strip().lower() 
@@ -625,7 +626,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
         anesth = str(row.get('Анестезия', '')).strip()
         interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
-        if op_code.lower() in ['nan', ''] or interruption == '9':
+        if op_code.lower() in ['nan', '']:
             continue
             
         sig = (op_code, op_type, anesth)
@@ -791,7 +792,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
         anesth = str(row.get('Анестезия', '')).strip()
         interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
-        if op_code.lower() in ['nan', ''] or interruption == '9':
+        if op_code.lower() in ['nan', '']:
             continue
             
         sig = (op_code, op_type, anesth)
@@ -955,7 +956,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
         anesth = str(row.get('Анестезия', '')).strip()
         interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
-        if op_code.lower() in ['nan', ''] or interruption == '9':
+        if op_code.lower() in ['nan', '']:
             continue
             
         sig = (op_code, op_type, anesth)
