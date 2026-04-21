@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
+import time
 import os
+import glob
 from datetime import datetime
-import math
+import re
 
 # --- НАСТРОЙКИ И СЛОВАРИ ---
 
@@ -56,20 +58,14 @@ def generate_html_report(errors_data, output_path):
         <style>
             body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 30px 20px; }}
             .container {{ max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
-            
-            /* --- ШАПКА И ПАНЕЛИ ФИЛЬТРОВ --- */
             h1 {{ margin: 0 0 20px 0; font-size: 1.5em; color: #2c3e50; }}
-            
             .controls {{ background: #fdfdfd; padding: 15px; border-radius: 6px; border: 1px solid #e0e0e0; margin-bottom: 20px; }}
             .stats {{ font-weight: bold; color: #3498db; font-size: 1.1em; margin-bottom: 15px; }}
-            
             .filters-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }}
             .filter-group {{ display: flex; flex-direction: column; gap: 5px; }}
             .filter-group label {{ font-size: 0.85em; font-weight: 600; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; }}
             input[type="text"] {{ padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; outline: none; }}
             input[type="text"]:focus {{ border-color: #3498db; }}
-            
-            /* Мультиселект отделений */
             .dropdown-check-list {{ display: inline-block; position: relative; width: 100%; }}
             .dropdown-check-list .anchor {{ width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; display: block; box-sizing: border-box; font-size: 14px; user-select: none; color: #333; }}
             .dropdown-check-list .anchor:after {{ content: '▼'; float: right; font-size: 10px; color: #7f8c8d; margin-top: 4px; }}
@@ -78,37 +74,26 @@ def generate_html_report(errors_data, output_path):
             .dropdown-check-list ul.items li {{ list-style: none; margin-bottom: 5px; font-size: 13px; }}
             .dropdown-check-list ul.items li label {{ display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px; }}
             .dropdown-check-list ul.items li label:hover {{ background: #f4f6f6; }}
-            
-            /* --- ПАНЕЛЬ ЭКСПОРТА --- */
             .export-panel {{ background: #fdfdfd; border: 1px solid #e0e0e0; padding: 15px; border-radius: 6px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }}
             .export-panel strong {{ color: #2c3e50; font-size: 1.1em; }}
             .export-controls {{ display: flex; gap: 15px; align-items: stretch; }}
             #summaryText {{ flex-grow: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 13px; outline: none; resize: vertical; min-height: 60px; white-space: pre; color: #555; background: #fff; }}
             .btn-copy {{ background: #27ae60; color: white; border: none; padding: 0 20px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; white-space: nowrap; font-size: 14px; }}
             .btn-copy:hover {{ background: #2ecc71; }}
-            
-            /* --- ТАБЛИЦА (КЛАССИЧЕСКИЙ СИНИЙ ДИЗАЙН) --- */
             .table-container {{ overflow-x: auto; max-height: 65vh; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; }}
             table {{ width: 100%; border-collapse: collapse; background: #fff; }}
             th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }}
-            
             th {{ background-color: #3498db; color: #ffffff; position: sticky; top: 0; z-index: 50; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-            
             tbody tr:hover {{ background-color: #fcfcfc; }}
-            
             .ib-col {{ font-weight: bold; color: #d35400; font-size: 15px; }}
             .error-col {{ color: #333; font-size: 14px; line-height: 1.5; }}
-            .error-col b {{ color: #333; }} /* Возвращаем черный цвет для жирного текста */
+            .error-col b {{ color: #333; }}
             .dept-col {{ color: #7f8c8d; font-size: 13px; font-weight: 500; }}
-            
             .fixed-row td {{ text-decoration: line-through; opacity: 0.5; background-color: #f9f9f9; }}
             .checkbox-custom {{ width: 18px; height: 18px; cursor: pointer; accent-color: #27ae60; margin-top: 2px; }}
             .hidden-row {{ display: none !important; }}
-            
             .context-tag {{ display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; font-weight: bold; margin-bottom: 5px; background-color: #f39c12; color: white; }}
             .tag-rean {{ background-color: #e74c3c; }}
-            
-            /* Подсказки */
             .hint-details {{ margin-top: 10px; border: 1px solid #eee; border-radius: 4px; overflow: hidden; background: #fafafa; }}
             .hint-details summary {{ padding: 8px 12px; cursor: pointer; font-weight: 600; color: #2980b9; font-size: 13px; outline: none; user-select: none; }}
             .hint-details summary:hover {{ background: #f0f0f0; }}
@@ -194,7 +179,6 @@ def generate_html_report(errors_data, output_path):
             main_err = error_text
             hint_html = ""
             
-        # Убрали красные рамки, оставляем чистый текст
         styled_error = main_err
         safe_dept = dept.replace("'", "\\'")
             
@@ -214,16 +198,11 @@ def generate_html_report(errors_data, output_path):
         </div>
 
         <script>
-            // --- МУЛЬТИСЕЛЕКТ ОТДЕЛЕНИЙ ---
             const checkList = document.getElementById('deptCheckList');
-            function toggleDeptDrop() {
-                checkList.classList.toggle('visible');
-            }
+            function toggleDeptDrop() { checkList.classList.toggle('visible'); }
             
             document.addEventListener('click', function(event) {
-                if (!checkList.contains(event.target)) {
-                    checkList.classList.remove('visible');
-                }
+                if (!checkList.contains(event.target)) { checkList.classList.remove('visible'); }
             });
 
             function toggleAllDepts(source) {
@@ -251,11 +230,9 @@ def generate_html_report(errors_data, output_path):
                 else anchor.innerText = `Выбрано отделений: ${checked}`;
             }
 
-            // --- ФИЛЬТРАЦИЯ ТАБЛИЦЫ ---
             function filterTable() {
                 const ibSearch = document.getElementById("ibFilter").value.toLowerCase();
                 const errSearch = document.getElementById("errorFilter").value.toLowerCase();
-                
                 const checkedDepts = Array.from(document.querySelectorAll('.dept-cb:checked')).map(cb => cb.value);
                 const rows = document.getElementsByClassName("data-row");
                 let visibleCount = 0;
@@ -280,22 +257,19 @@ def generate_html_report(errors_data, output_path):
                 document.getElementById("statsCount").innerText = "Отображено ошибок: " + visibleCount;
             }
 
-            // --- ТАБЛИЦА И ЭКСПОРТ (СТОЛБИКОМ) ---
             let fixedIBs = new Map();
 
             function toggleFix(index, ibNumber, deptName) {
                 const row = document.getElementById('row_' + index);
                 const checkbox = document.getElementById('check_' + index);
-                
                 const textLine = ibNumber + " (" + deptName + ")";
-                const entryId = index; 
                 
                 if (checkbox.checked) {
                     row.classList.add('fixed-row');
-                    fixedIBs.set(entryId, textLine);
+                    fixedIBs.set(index, textLine);
                 } else {
                     row.classList.remove('fixed-row');
-                    fixedIBs.delete(entryId);
+                    fixedIBs.delete(index);
                 }
                 updateSummary();
             }
@@ -443,7 +417,6 @@ def _check_interruption_code(group, ib_num):
     if sorted_group.empty:
         return errors
 
-    
     last_row = sorted_group.iloc[-1]
     last_code = str(last_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
 
@@ -472,9 +445,7 @@ def _check_interruption_code(group, ib_num):
 
 def _check_department_rules(group, ib_num):
     errors = []
-
     reanimation_target_codes = ['056029', '56029']
-
     unique_movs = group.drop_duplicates(subset=['Отделение', 'МЭС. Код'])
     
     for _, row in unique_movs.iterrows():
@@ -495,6 +466,37 @@ def _check_department_rules(group, ib_num):
                 errors.append(f"ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в отделениях реанимации (у вас '<b>{department}</b>').")
 
     return list(dict.fromkeys(errors))
+
+def _check_missing_operation_and_samotek(group, mscrit_match, ib_num, mes_code, mkb_code, canal, department, ref_mscrit, search_mkbs):
+    errors = []
+
+    if str(canal).strip().lower() in ['самотек', 'самотёк', '103 поликлиника']:
+        samotek_col = 'Допустимость госпитализации "самотёк"'
+        samotek_val = 1
+        if samotek_col in mscrit_match.columns:
+            val = mscrit_match[samotek_col].iloc[0]
+            samotek_val = int(val) if pd.notna(val) else 1
+            
+        if samotek_val == 0:
+            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
+
+    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
+    if a00_match.empty:
+        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
+        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
+        
+        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
+
+        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
+            pass 
+        else:
+            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+            if department in DIFFICULT_DEPARTMENTS:
+                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+            errors.append(error_msg)
+            
+    return errors
 
 # --- ЛОГИКА ИСКЛЮЧЕНИЙ И ПАЦИЕНТОВ ---
 
@@ -603,14 +605,13 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
         else:
             diag_error_msg = diag_err_reason
         
-    # --- БЛОК ОПЕРАЦИЙ ---
+    # --- ОПТИМИЗИРОВАННЫЙ БЛОК ОПЕРАЦИЙ ---
     performed_ops = []
     seen = set()
-    for idx, row in group.iterrows():
+    for row in group.to_dict('records'):
         op_code = str(row.get('Код', '')).strip()
         op_type = str(row.get('Основная/сопутст', row.get('Основная/сопутствующая', ''))).strip()
         anesth = str(row.get('Анестезия', '')).strip()
-        interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
         if op_code.lower() in ['nan', '']:
             continue
@@ -634,7 +635,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
                 valid_candidates.append((row, a00_match.iloc[0]))
         else:
             for row in performed_ops:
-                op_code = str(row['Код']).strip()
+                op_code = str(row.get('Код', '')).strip()
                 mscrit_match = ref_mscrit[
                     (ref_mscrit['Код медицинской услуги'] == mes_code) & 
                     (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
@@ -645,7 +646,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
                     
             if not valid_candidates:
                 for row in performed_ops:
-                    op_code = str(row['Код']).strip()
+                    op_code = str(row.get('Код', '')).strip()
                     fallback_match = ref_mscrit[
                         (ref_mscrit['Код медицинской услуги'] == mes_code) & 
                         (ref_mscrit['Код хирургической операции'] == op_code)
@@ -654,7 +655,7 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
                         valid_candidates.append((row, fallback_match.iloc[0]))
         
         if not valid_candidates:
-            op_codes_str = ", ".join(sorted(list(set([str(r['Код']).strip() for r in performed_ops]))))
+            op_codes_str = ", ".join(sorted(list(set([str(r.get('Код', '')).strip() for r in performed_ops]))))
             if has_diag_error:
                 error_msg = f"ИБ {ib_num}: 🚨 <b style='color:var(--error-border);'>ДВОЙНАЯ ОШИБКА:</b> Базовая проверка диагноза ({diag_error_msg}), И ни одна из операций (<b>{op_codes_str}</b>) не подходит."
             else:
@@ -700,26 +701,11 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
                     (ref_mscrit['Код диагноза'].isin(search_mkbs))
                 ]
                 if not mscrit_match.empty:
-                    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
-                    if a00_match.empty:
-                        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
-                        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
-                        
-                        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
-                        
-                        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
-                            pass
-                        else:
-                            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
-                            if department in DIFFICULT_DEPARTMENTS:
-                                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
-                                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
-                            errors.append(error_msg)
-                    elif str(canal).strip().lower() == 'самотек':
-                        samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
-                        if samotek_val == 0:
-                            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
-            
+                    missing_op_errors = _check_missing_operation_and_samotek(
+                        group, mscrit_match, ib_num, mes_code, mkb_code, canal, department, ref_mscrit, search_mkbs
+                    )
+                    errors.extend(missing_op_errors)
+
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
 
@@ -777,14 +763,13 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
             else:
                 diag_error_msg = f"{diag_err_reason}"
                 
-    # --- БЛОК ОПЕРАЦИЙ ---
+    # --- ОПТИМИЗИРОВАННЫЙ БЛОК ОПЕРАЦИЙ ---
     performed_ops = []
     seen = set()
-    for idx, row in group.iterrows():
+    for row in group.to_dict('records'):
         op_code = str(row.get('Код', '')).strip()
         op_type = str(row.get('Основная/сопутст', row.get('Основная/сопутствующая', ''))).strip()
         anesth = str(row.get('Анестезия', '')).strip()
-        interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
         if op_code.lower() in ['nan', '']:
             continue
@@ -808,7 +793,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                 valid_candidates.append((row, a00_match.iloc[0]))
         else:
             for row in performed_ops:
-                op_code = str(row['Код']).strip()
+                op_code = str(row.get('Код', '')).strip()
                 mscrit_match = ref_mscrit[
                     (ref_mscrit['Код медицинской услуги'] == mes_code) & 
                     (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
@@ -819,7 +804,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                     
             if not valid_candidates:
                 for row in performed_ops:
-                    op_code = str(row['Код']).strip()
+                    op_code = str(row.get('Код', '')).strip()
                     fallback_match = ref_mscrit[
                         (ref_mscrit['Код медицинской услуги'] == mes_code) & 
                         (ref_mscrit['Код хирургической операции'] == op_code)
@@ -828,7 +813,7 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                         valid_candidates.append((row, fallback_match.iloc[0]))
         
         if not valid_candidates:
-            op_codes_str = ", ".join(sorted(list(set([str(r['Код']).strip() for r in performed_ops]))))
+            op_codes_str = ", ".join(sorted(list(set([str(r.get('Код', '')).strip() for r in performed_ops]))))
             if has_diag_error:
                 error_msg = f"ИБ {ib_num}: 🚨 <b style='color:var(--error-border);'>ДВОЙНАЯ ОШИБКА:</b> Базовая проверка диагноза ({diag_error_msg}), И ни одна из операций (<b>{op_codes_str}</b>) не подходит."
             else:
@@ -874,27 +859,11 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                     (ref_mscrit['Код диагноза'].isin(search_mkbs))
                 ]
                 if not mscrit_match.empty:
-                    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
-                    if a00_match.empty:
+                    missing_op_errors = _check_missing_operation_and_samotek(
+                        group, mscrit_match, ib_num, mes_code, mkb_code, canal, department, ref_mscrit, search_mkbs
+                    )
+                    errors.extend(missing_op_errors)
 
-                        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
-                        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
-                        
-                        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
-                        
-                        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
-                            pass
-                        else:
-                            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
-                            if department in DIFFICULT_DEPARTMENTS:
-                                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
-                                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
-                            errors.append(error_msg)
-                    elif str(canal).strip().lower() == 'самотек':
-                        samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
-                        if samotek_val == 0:
-                            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
-            
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
 
@@ -950,14 +919,13 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
             else:
                 diag_error_msg = f"{diag_err_reason}"
 
-    # --- БЛОК ОПЕРАЦИЙ ---
+    # --- ОПТИМИЗИРОВАННЫЙ БЛОК ОПЕРАЦИЙ ---
     performed_ops = []
     seen = set()
-    for idx, row in group.iterrows():
+    for row in group.to_dict('records'):
         op_code = str(row.get('Код', '')).strip()
         op_type = str(row.get('Основная/сопутст', row.get('Основная/сопутствующая', ''))).strip()
         anesth = str(row.get('Анестезия', '')).strip()
-        interruption = str(row.get('Код прерывания госпитализации', '')).split('.')[0]
         
         if op_code.lower() in ['nan', '']:
             continue
@@ -981,7 +949,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                 valid_candidates.append((row, a00_match.iloc[0]))
         else:
             for row in performed_ops:
-                op_code = str(row['Код']).strip()
+                op_code = str(row.get('Код', '')).strip()
                 mscrit_match = ref_mscrit[
                     (ref_mscrit['Код медицинской услуги'] == mes_code) & 
                     (ref_mscrit['Код диагноза'].isin(search_mkbs)) &
@@ -992,7 +960,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                     
             if not valid_candidates:
                 for row in performed_ops:
-                    op_code = str(row['Код']).strip()
+                    op_code = str(row.get('Код', '')).strip()
                     fallback_match = ref_mscrit[
                         (ref_mscrit['Код медицинской услуги'] == mes_code) & 
                         (ref_mscrit['Код хирургической операции'] == op_code)
@@ -1001,7 +969,7 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                         valid_candidates.append((row, fallback_match.iloc[0]))
         
         if not valid_candidates:
-            op_codes_str = ", ".join(sorted(list(set([str(r['Код']).strip() for r in performed_ops]))))
+            op_codes_str = ", ".join(sorted(list(set([str(r.get('Код', '')).strip() for r in performed_ops]))))
             if has_diag_error:
                 error_msg = f"ИБ {ib_num}: 🚨 <b style='color:var(--error-border);'>ДВОЙНАЯ ОШИБКА:</b> Базовая проверка диагноза ({diag_error_msg}), И ни одна из операций (<b>{op_codes_str}</b>) не подходит."
             else:
@@ -1047,31 +1015,17 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                     (ref_mscrit['Код диагноза'].isin(search_mkbs))
                 ]
                 if not mscrit_match.empty:
-                    a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
-                    if a00_match.empty:
-                        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
-                        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
-                        
-                        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
-                        
-                        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
-                            pass
-                        else:
-                            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
-                            if department in DIFFICULT_DEPARTMENTS:
-                                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
-                                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
-                            errors.append(error_msg)
-                    elif str(canal).strip().lower() == 'самотек':
-                        samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
-                        if samotek_val == 0:
-                            errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
-            
+                    missing_op_errors = _check_missing_operation_and_samotek(
+                        group, mscrit_match, ib_num, mes_code, mkb_code, canal, department, ref_mscrit, search_mkbs
+                    )
+                    errors.extend(missing_op_errors)
+
     errors.extend(_check_interruption_code(group, ib_num))
     return errors
 
 
 def main():
+    start_time = time.time()
     import glob
     
     INPUT_DIR = 'input_data/'
@@ -1111,7 +1065,7 @@ def main():
         ref_mscrit = pd.read_csv(mscrit_file, sep=';', encoding='windows-1251')
         ref_reeskp = pd.read_csv(reeskp_file, sep=';', encoding='windows-1251')
         ref_mkb10 = pd.read_csv(mkb10_file, sep=';', encoding='windows-1251')
-        
+
         ref_msmkbe['Код медицинской услуги'] = ref_msmkbe['Код медицинской услуги'].astype(str).str.split('.').str[0].str.strip()
         ref_msmkbe['Код диагноза (шифр по МКБ-10)'] = ref_msmkbe['Код диагноза (шифр по МКБ-10)'].astype(str).str.strip().str.upper()
         
@@ -1196,10 +1150,16 @@ def main():
             report_name = f"report_{current_time}.html"
             generate_html_report(all_errors, output_path=os.path.join(INPUT_DIR, report_name))
 
+        end_time = time.time()
+        execution_time = end_time - start_time
+        print(f"\n⏱️ Общее время выполнения скрипта: {execution_time:.2f} секунд ({execution_time/60:.2f} минут)")
+
     except Exception as e:
         print("\n" + "!"*50)
         print(f"ПРОИЗОШЛА КРИТИЧЕСКАЯ ОШИБКА:")
         print(e)
+        import traceback
+        traceback.print_exc()
         print("!"*50)
         
     input("\nНажмите Enter, чтобы закрыть программу...")
