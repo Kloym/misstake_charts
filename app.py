@@ -443,49 +443,30 @@ def _check_interruption_code(group, ib_num):
     if sorted_group.empty:
         return errors
 
-    if len(sorted_group) > 1:
-        for idx in range(len(sorted_group) - 1):
-            current_row = sorted_group.iloc[idx]
-            code = str(current_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
-            dept = str(current_row.get('Отделение', '')).lower()
-            if 'дневной стационар' in dept:
-                continue
-                
-            if code != '7' and code != 'NAN':
-                errors.append(f"ИБ {ib_num}: Множественные переводы: промежуточные коды прерывания должны быть строго '<b>7</b>', а в выписке №{idx+1} указан '<b>{code}</b>'.")
-
+    
     last_row = sorted_group.iloc[-1]
-    last_dept = str(last_row.get('Отделение', '')).lower()
     last_code = str(last_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
 
     if last_code != 'NAN':
         if mes_code in SPECIAL_PROJECT_MES:
             if mes_code.startswith('200'):
                 if patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
-                    if last_code not in ['S', 'С', 'V', 'В']:
+                    if last_code not in ['S', 'С', 'C', 'V', 'В']:
                         errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП спецпроекта (<b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>S</b>' или '<b>V</b>', а указан '<b>{last_code}</b>'.")
                 else:
-                    if last_code not in ['S', 'С']:
+                    if last_code not in ['S', 'С', 'C']:
                         errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
             else:
                 if patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
-                    if last_code not in ['0', 'S', 'С']:
+                    if last_code not in ['0', 'S', 'С', 'C']:
                         errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>0</b>' или '<b>S</b>', а указан '<b>{last_code}</b>'.")
                 else:
-                    if last_code not in ['S', 'С']:
+                    if last_code not in ['S', 'С', 'C']:
                         errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
                         
         elif mes_code.startswith('200'):
             if last_code not in ['V', 'В']:
                 errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП (<b>{mes_code}</b>) код последнего движения должен быть '<b>V</b>', а указан '<b>{last_code}</b>'.")
-                
-        elif 'реанимац' in last_dept:
-            if mes_code.startswith('183'):
-                if last_code not in ['1', '3', '5']:
-                    errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации новорожденных (МЭС {mes_code}), ожидался код '<b>1</b>', '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
-            else:
-                if last_code not in ['3', '5']:
-                    errors.append(f"ИБ {ib_num}: Код прерывания: последнее движение было в реанимации, ожидался код '<b>3</b>' или '<b>5</b>', а указан '<b>{last_code}</b>'.")
                 
     return errors
 
@@ -721,11 +702,19 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
                 if not mscrit_match.empty:
                     a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
                     if a00_match.empty:
-                        error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
-                        if department in DIFFICULT_DEPARTMENTS:
-                            hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
-                            error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
-                        errors.append(error_msg)
+                        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
+                        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
+                        
+                        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
+                        
+                        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
+                            pass
+                        else:
+                            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+                            if department in DIFFICULT_DEPARTMENTS:
+                                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+                            errors.append(error_msg)
                     elif str(canal).strip().lower() == 'самотек':
                         samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
                         if samotek_val == 0:
@@ -887,11 +876,20 @@ def check_in_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                 if not mscrit_match.empty:
                     a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
                     if a00_match.empty:
-                        error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
-                        if department in DIFFICULT_DEPARTMENTS:
-                            hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
-                            error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
-                        errors.append(error_msg)
+
+                        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
+                        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
+                        
+                        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
+                        
+                        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
+                            pass
+                        else:
+                            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+                            if department in DIFFICULT_DEPARTMENTS:
+                                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+                            errors.append(error_msg)
                     elif str(canal).strip().lower() == 'самотек':
                         samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
                         if samotek_val == 0:
@@ -1051,11 +1049,19 @@ def check_zl_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10):
                 if not mscrit_match.empty:
                     a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
                     if a00_match.empty:
-                        error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
-                        if department in DIFFICULT_DEPARTMENTS:
-                            hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
-                            error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
-                        errors.append(error_msg)
+                        sorted_g = group.dropna(subset=['Код прерывания госпитализации']).sort_values(by='Дата поступления')
+                        last_c = str(sorted_g.iloc[-1]['Код прерывания госпитализации']).split('.')[0].strip() if not sorted_g.empty else 'NAN'
+                        
+                        EXEMPT_9_CODES = ['068030', '068050', '068090', '068180', '073110', '073150', '073180', '079002', '079010', '079020', '079040', '079060', '079061', '079070', '079080', '079090', '079100', '079110', '079120', '079122', '079300', '079320', '079330', '082001', '082003', '082024', '085008', '085051', '085060', '085081', '086010']
+                        
+                        if mes_code.zfill(6) in EXEMPT_9_CODES and last_c == '9':
+                            pass
+                        else:
+                            error_msg = f"ИБ {ib_num}: Ошибка: для МЭС <b>{mes_code}</b> и диагноза <b>{mkb_code}</b> обязательна хирургическая операция, но она отсутствует."
+                            if department in DIFFICULT_DEPARTMENTS:
+                                hint_html = _get_hints_for_mscrit(mes_code, ref_mscrit, search_mkbs)
+                                error_msg += f"<div class='hint-wrapper'>{hint_html}</div>"
+                            errors.append(error_msg)
                     elif str(canal).strip().lower() == 'самотек':
                         samotek_val = int(a00_match.iloc[0].get('Допустимость госпитализации "самотёк"', 1))
                         if samotek_val == 0:
