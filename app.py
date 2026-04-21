@@ -306,7 +306,7 @@ def generate_html_report(errors_data, output_path):
                     summaryInput.value = "";
                 } else {
                     const uniqueLines = Array.from(new Set(fixedIBs.values()));
-                    summaryInput.value = uniqueLines.join("\\n");
+                    summaryInput.value = "Поправили:\\n" + uniqueLines.join("\\n");
                 }
             }
             
@@ -445,7 +445,12 @@ def _check_interruption_code(group, ib_num):
 
     if len(sorted_group) > 1:
         for idx in range(len(sorted_group) - 1):
-            code = str(sorted_group.iloc[idx]['Код прерывания госпитализации']).split('.')[0].strip().upper()
+            current_row = sorted_group.iloc[idx]
+            code = str(current_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
+            dept = str(current_row.get('Отделение', '')).lower()
+            if 'дневной стационар' in dept:
+                continue
+                
             if code != '7' and code != 'NAN':
                 errors.append(f"ИБ {ib_num}: Множественные переводы: промежуточные коды прерывания должны быть строго '<b>7</b>', а в выписке №{idx+1} указан '<b>{code}</b>'.")
 
