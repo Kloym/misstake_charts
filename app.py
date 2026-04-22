@@ -399,49 +399,49 @@ def _check_interruption_code(group, ib_num):
     if 'Код прерывания госпитализации' not in group.columns:
         return errors
         
-    mes_code = str(group['МЭС. Код'].iloc[0]).split('.')[0].strip()
     patient_type = str(group['ПУМП. Тип пациента'].iloc[0]).strip().upper() if 'ПУМП. Тип пациента' in group.columns else 'UNKNOWN'
     
     SPECIAL_PROJECT_MES = ['200531', '79550', '79018', '200627', '79008', '66213', '66212', '200031', '200510', '66275', '200625', '200664', '200667', '72044', '200088', '72039', '76951', '76242', '82031', '82043', '82044', '82045', '82055', '200665', '200711']
 
-    if mes_code in SPECIAL_PROJECT_MES:
-        if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
-            errors.append(f"ИБ {ib_num}: Недопустимый МЭС: спецпроект <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
-    elif mes_code.startswith('200'):
-        if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
-            errors.append(f"ИБ {ib_num}: Недопустимый МЭС: МЭС <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
-
-    unique_movs = group.drop_duplicates(subset=['Дата поступления', 'Отделение', 'Код прерывания госпитализации'])
-    sorted_group = unique_movs.sort_values(by='Дата поступления').dropna(subset=['Код прерывания госпитализации'])
+    unique_movs = group.drop_duplicates(subset=['МЭС. Код', 'Код прерывания госпитализации']).dropna(subset=['Код прерывания госпитализации'])
     
-    if sorted_group.empty:
-        return errors
+    for _, row in unique_movs.iterrows():
+        mes_code = str(row['МЭС. Код']).split('.')[0].strip()
+        code = str(row['Код прерывания госпитализации']).split('.')[0].strip().upper()
 
-    last_row = sorted_group.iloc[-1]
-    last_code = str(last_row['Код прерывания госпитализации']).split('.')[0].strip().upper()
+        if code == 'NAN':
+            continue
 
-    if last_code != 'NAN':
-        if mes_code in SPECIAL_PROJECT_MES:
+        mes_clean = mes_code.lstrip('0') if mes_code.startswith('0') else mes_code
+        is_special = mes_code in SPECIAL_PROJECT_MES or mes_clean in SPECIAL_PROJECT_MES
+
+        if is_special:
+            if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
+                errors.append(f"ИБ {ib_num}: Недопустимый МЭС: спецпроект <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
+            
             if mes_code.startswith('200'):
                 if patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
-                    if last_code not in ['S', 'С', 'C', 'V', 'В']:
-                        errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП спецпроекта (<b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>S</b>' или '<b>V</b>', а указан '<b>{last_code}</b>'.")
+                    if code not in ['S', 'С', 'C', 'V', 'В']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП спецпроекта (<b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>S</b>' или '<b>V</b>', а указан '<b>{code}</b>'.")
                 else:
-                    if last_code not in ['S', 'С', 'C']:
-                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
+                    if code not in ['S', 'С', 'C']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{code}</b>'.")
             else:
                 if patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
-                    if last_code not in ['0', 'S', 'С', 'C']:
-                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>0</b>' или '<b>S</b>', а указан '<b>{last_code}</b>'.")
+                    if code not in ['0', 'S', 'С', 'C']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>0</b>' или '<b>S</b>', а указан '<b>{code}</b>'.")
                 else:
-                    if last_code not in ['S', 'С', 'C']:
-                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{last_code}</b>'.")
+                    if code not in ['S', 'С', 'C']:
+                        errors.append(f"ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) код должен быть '<b>S</b>', а указан '<b>{code}</b>'.")
                         
         elif mes_code.startswith('200'):
-            if last_code not in ['V', 'В']:
-                errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП (<b>{mes_code}</b>) код последнего движения должен быть '<b>V</b>', а указан '<b>{last_code}</b>'.")
+            if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
+                errors.append(f"ИБ {ib_num}: Недопустимый МЭС: МЭС <b>{mes_code}</b> разрешен только для '<b>ЗЛ</b>' и '<b>ИН</b>' (у вас '<b>{patient_type}</b>').")
+
+            if code not in ['V', 'В']:
+                errors.append(f"ИБ {ib_num}: Код прерывания: для МЭС ВМП (<b>{mes_code}</b>) код должен быть '<b>V</b>', а указан '<b>{code}</b>'.")
                 
-    return errors
+    return list(dict.fromkeys(errors))
 
 def _check_department_rules(group, ib_num):
     errors = []
