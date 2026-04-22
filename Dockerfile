@@ -4,16 +4,16 @@ USER root
 
 WORKDIR /app
 
-# Копируем все файлы проекта в контейнер
+# Копируем абсолютно ВСЕ файлы проекта (app.py, utils.py, requirements.txt и т.д.)
 COPY . .
 
 # Обновляем pip
 RUN python -m pip install --upgrade pip
 
-# Устанавливаем PyInstaller (оставляю твои проверенные версии для совместимости с этим образом)
+# Устанавливаем PyInstaller (оставляем твои проверенные версии)
 RUN python -m pip install "pyinstaller==5.13.2" "setuptools<65.0.0" "wheel" "pefile"
 
-# Устанавливаем наши зависимости
+# Устанавливаем зависимости из requirements.txt
 RUN pip install -r requirements.txt
 
 # Собираем .exe файл
