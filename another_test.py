@@ -153,8 +153,9 @@ def _check_interruption_code(group, ib_num):
         if is_special:
             if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР', 'НИЛ']:
                 errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Недопустимый МЭС: спецпроект <b>{mes_code}</b> разрешен только для 'ЗЛ', 'ИН' и 'НИЛ' (у вас '<b>{patient_type}</b>').")
-            
+
             if mes_code.startswith('200'):
+                # 1. СПЕЦПРОЕКТ ВМП
                 if patient_type == 'НИЛ' and code in ['S', 'С', 'C']:
                     errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Код прерывания: для МЭС ВМП спецпроекта (<b>{mes_code}</b>) пациенту 'НИЛ' нельзя ставить '<b>{display_code}</b>'.")
                 elif patient_type in ['ЗЛ', 'НР'] and code not in ['S', 'С', 'C']:
@@ -162,15 +163,14 @@ def _check_interruption_code(group, ib_num):
                 elif patient_type in ['ИН', 'ИНОГОРОДНИЙ'] and code not in ['V', 'В']:
                     errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Код прерывания: для МЭС ВМП спецпроекта (<b>{mes_code}</b>) у пациента 'ИН' должен быть '<b>V</b>', а указано '<b>{display_code}</b>'.")
             else:
+                # 2. ОБЫЧНЫЙ СПЕЦПРОЕКТ
                 if patient_type == 'НИЛ' and code in ['S', 'С', 'C']:
                     errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) пациенту 'НИЛ' нельзя ставить '<b>{display_code}</b>'.")
                 elif patient_type in ['ЗЛ', 'НР'] and code not in ['S', 'С', 'C']:
                     errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) у пациента 'ЗЛ' должен быть '<b>S</b>', а указано '<b>{display_code}</b>'.")
-                elif patient_type in ['ИН', 'ИНОГОРОДНИЙ']:
-                    if code in ['S', 'С', 'C']:
-                        errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Код прерывания: для спецпроекта (МЭС <b>{mes_code}</b>) у пациента 'ИН' нельзя ставить '<b>{display_code}</b>'.")
-                        
+
         elif mes_code.startswith('200'):
+            # ВМП
             if patient_type == 'НИЛ':
                 errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Недопустимый МЭС: пациентам 'НИЛ' запрещено выставлять МЭС ВМП (<b>{mes_code}</b>).")
             elif patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР']:
