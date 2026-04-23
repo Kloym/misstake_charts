@@ -94,7 +94,7 @@ def generate_html_report(errors_data, output_path):
     </head>
     <body>
         <div class="container">
-            <h1>📝 Готовый ответ для оператора:</h1>
+            <h1>📝 Отчет по ошибкам для врачей:</h1>
             
             <div class="controls">
                 <div class="stats-row">
@@ -127,7 +127,7 @@ def generate_html_report(errors_data, output_path):
             
             <div class="export-panel">
                 <div class="export-controls">
-                    <textarea id="summaryText" readonly placeholder="Отметьте галочками исправленные ИБ в таблице ниже..."></textarea>
+                    <textarea id="summaryText" readonly placeholder="Отметьте галочками исправленные ИБ в таблице ниже и отправьте появившийся текст операторам..."></textarea>
                     <button class="btn-copy" onclick="copySummary()" id="copyBtn">Скопировать</button>
                 </div>
             </div>
