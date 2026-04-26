@@ -9,7 +9,7 @@ import traceback
 from test_utils import ANESTHESIA_DICT, DIFFICULT_DEPARTMENTS, debug_print, generate_html_report
 
 
-# --- ФУНКЦИИ ГЕНЕРАЦИИ ПОДСКАЗОК ---
+# --- ФУНКЦИИ ГЕНЕРАЦИИ ПОДСКАЗОК ПО РАЗНЫМ СПРАВОЧНИКАМ ---
 
 def _get_hints_for_msmkbe(mes_code, ref_msmkbe):
     mes_code_str = str(mes_code).strip()
@@ -113,6 +113,7 @@ def _check_interruption_code(group, ib_num):
         return errors
         
     patient_type = str(group['ПУМП. Тип пациента'].iloc[0]).strip().upper() if 'ПУМП. Тип пациента' in group.columns else 'UNKNOWN'
+    
     SPECIAL_PROJECT_MES = ['200531', '79550', '79018', '200627', '79008', '66213', '66212', '200031', '200510', '66275', '200625', '200626', '200664', '200667', '72044', '200088', '72039', '76951', '82031', '82044', '82045', '82055', '200665', '200711']
 
     unique_movs = group.drop_duplicates(subset=['МЭС. Код', 'Код прерывания госпитализации']).copy()
@@ -595,6 +596,7 @@ def main():
             print("⚠️ Файл recommendations.xlsx не найден в папке references. Подсказки по клиническим критериям будут отключены.")
             
         all_errors = []
+        criteria_set = set()
         
         reanimation_target_codes = ['056029', '56029', '083010', '083020', '083030', '083040', '083050', '183010', '183020', '183030', '183040', '183050', '83010', '83020', '83030', '83040', '83050']
         
@@ -656,6 +658,11 @@ def main():
                 
             temp_errors.extend(_check_interruption_code(group, ib))
 
+            target_mes = mes_code.lstrip('0') if mes_code.startswith('0') else mes_code
+            if mes_code in recs_dict or target_mes in recs_dict:
+                found_mes = mes_code if mes_code in recs_dict else target_mes
+                criteria_set.add((department, found_mes))
+
             for err in temp_errors:
                 if err.startswith("DEPT::"):
                     _, spec_dept, msg = err.split("::", 2)
@@ -670,11 +677,13 @@ def main():
         for err_dict in all_errors:
             clean_msg = re.sub(r'<[^>]+>', '', err_dict['message'])
             print(f"[{err_dict['department']}] {clean_msg}")
+
+        criteria_list = [{'department': d, 'mes': m} for d, m in sorted(criteria_set)]
             
-        if all_errors:
+        if all_errors or criteria_list:
             current_time = datetime.now().strftime("%d.%m.%Y_%H-%M")
             report_name = f"report_{current_time}.html"
-            generate_html_report(all_errors, recs_dict, output_path=os.path.join(INPUT_DIR, report_name))
+            generate_html_report(all_errors, criteria_list, recs_dict, output_path=os.path.join(INPUT_DIR, report_name))
 
         end_time = time.time()
         execution_time = end_time - start_time
