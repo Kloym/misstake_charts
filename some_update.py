@@ -6,10 +6,10 @@ import glob
 from datetime import datetime
 import re
 import traceback
-
 from test_utils import ANESTHESIA_DICT, DIFFICULT_DEPARTMENTS, debug_print, generate_html_report
 
-# --- ФУНКЦИИ ГЕНЕРАЦИИ ПОДСКАЗОК ПО РАЗНЫМ СПРАВОЧНИКАМ ---
+
+# --- ФУНКЦИИ ГЕНЕРАЦИИ ПОДСКАЗОК ---
 
 def _get_hints_for_msmkbe(mes_code, ref_msmkbe):
     mes_code_str = str(mes_code).strip()
@@ -113,8 +113,6 @@ def _check_interruption_code(group, ib_num):
         return errors
         
     patient_type = str(group['ПУМП. Тип пациента'].iloc[0]).strip().upper() if 'ПУМП. Тип пациента' in group.columns else 'UNKNOWN'
-    
-    # ОБНОВЛЕННЫЙ СПИСОК МЭС СПЕЦПРОЕКТОВ
     SPECIAL_PROJECT_MES = ['200531', '79550', '79018', '200627', '79008', '66213', '66212', '200031', '200510', '66275', '200625', '200626', '200664', '200667', '72044', '200088', '72039', '76951', '82031', '82044', '82045', '82055', '200665', '200711']
 
     unique_movs = group.drop_duplicates(subset=['МЭС. Код', 'Код прерывания госпитализации']).copy()
@@ -251,8 +249,6 @@ def _validate_operations_and_diagnoses(group, ref_mscrit, ref_msmkbe, ref_reeskp
         
         if op_code.lower() in ['nan', '']:
             continue
-            
-        # УБРАЛИ КОСТЫЛЬ С "1" ПО ЗАПРОСУ
 
         op_type = str(row.get('Основная/сопутст', row.get('Основная/сопутствующая', ''))).strip()
         anesth = str(row.get('Анестезия', '')).strip()
