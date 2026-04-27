@@ -191,9 +191,13 @@ def _check_department_rules(group, ib_num):
         row_dept = str(row.get('Отделение', '')).strip()
         dept_lower = row_dept.lower()
 
-        if mes_code.startswith(('95', '095', '84', '084')):
-            if 'коечное отделение нп' not in dept_lower and 'диагностическ' not in dept_lower:
-                errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в Коечном отделении НП или диагностическом (у вас '<b>{row_dept}</b>').")
+        is_diag_or_np = 'коечное отделение нп' in dept_lower or 'диагностическ' in dept_lower
+        is_mes_84_95 = mes_code.startswith(('95', '095', '84', '084'))
+
+        if is_mes_84_95 and not is_diag_or_np:
+            errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Ошибка отделения: МЭС <b>{mes_code}</b> допустим только в Коечном отделении НП или диагностическом (у вас '<b>{row_dept}</b>').")
+        elif is_diag_or_np and not is_mes_84_95:
+            errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: Ошибка МЭС: в '<b>{row_dept}</b>' разрешены только МЭС, начинающиеся на 84 или 95 (у вас указан '<b>{mes_code}</b>').")
 
         elif mes_code.startswith('183'):
             if 'новорожден' not in dept_lower:
