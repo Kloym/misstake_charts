@@ -367,21 +367,30 @@ def check_reanimation_logic(group, ib_num):
         if 'Дата выбытия' not in group.columns:
             return [f"ИБ {ib_num}: [Реанимация] В таблице 'Движение' нет столбца 'Дата выбытия' для расчета дней."]
             
-        unique_movs = group.drop_duplicates(subset=['Дата поступления', 'Дата выбытия', 'Отделение'])
+        unique_movs = group.drop_duplicates(subset=['Дата поступления', 'Дата выбытия', 'Отделение']).copy()
+        unique_movs['temp_date'] = pd.to_datetime(unique_movs['Дата выбытия'], dayfirst=True, errors='coerce')
+        sorted_movs = unique_movs.sort_values(by=['temp_date', 'Дата поступления'])
+        last_mov_idx = sorted_movs.index[-1] if not sorted_movs.empty else None
+        
         rean_rows = unique_movs[unique_movs['Отделение'].astype(str).str.lower().str.contains('реанимац', na=False)]
         
         if rean_rows.empty:
             rean_rows = unique_movs 
 
-        for _, row in rean_rows.iterrows():
+        for idx, row in rean_rows.iterrows():
             mes_code = str(row.get('МЭС. Код', group['МЭС. Код'].iloc[0])).split('.')[0].strip()
             row_dept = str(row.get('Отделение', 'Реанимации')).strip()
 
             reanimation_target_codes = ['056029', '56029', '083010', '083020', '083030', '083040', '083050', '183010', '183020', '183030', '183040', '183050', '83010', '83020', '83030', '83040', '83050']
+
+            is_last_movement = (idx == last_mov_idx)
             
             if mes_code not in reanimation_target_codes:
-                errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: [Реанимация] Ошибка МЭС: в '{row_dept}' указан непрофильный МЭС <b>{mes_code}</b>. Для нахождения в реанимации требуется специальный МЭС.")
-                continue 
+                if is_last_movement:
+                    continue
+                else:
+                    errors.append(f"DEPT::{row_dept}::ИБ {ib_num}: [Реанимация] Ошибка МЭС: в '{row_dept}' указан непрофильный МЭС <b>{mes_code}</b>. Для нахождения в реанимации требуется специальный МЭС.")
+                    continue 
 
             if pd.notna(row['Дата поступления']) and pd.notna(row['Дата выбытия']):
                 d_in = pd.to_datetime(row['Дата поступления'], dayfirst=True)
