@@ -79,25 +79,28 @@ def load_and_merge_data(mov_path, disch_path, op_path):
     
     return df_full
 
-def _check_mscrit_operation_rules(op_row, mscrit_req, ib_num, canal, is_skp):
+def _check_mscrit_operation_rules(op_row, mscrit_req, ib_num, canal, is_skp, mes_code=""):
     errors = []
-    op_code = str(op_row.get('Код', '')).strip()
-    op_type = str(op_row.get('Основная/сопутст', op_row.get('Основная/сопутствующая', ''))).strip()
-        
-    req_main = mscrit_req['Обязательность отметки операции как основной']
-    if req_main == 1 and op_type != 'Основная':
-        errors.append(f"ИБ {ib_num}: Статус операции: в данной связке операция <b>{op_code}</b> обязана быть 'Основной', а у вас указана '<b>{op_type}</b>'.")
 
-    anesthesia_name = str(op_row.get('Анестезия', '')).strip()
+    if str(mes_code).strip() != '200513':
+        op_code = str(op_row.get('Код', '')).strip()
+        op_type = str(op_row.get('Основная/сопутст', op_row.get('Основная/сопутствующая', ''))).strip()
+            
+        req_main = mscrit_req['Обязательность отметки операции как основной']
+        if req_main == 1 and op_type != 'Основная':
+            errors.append(f"ИБ {ib_num}: Статус операции: в данной связке операция <b>{op_code}</b> обязана быть 'Основной', а у вас указана '<b>{op_type}</b>'.")
 
-    if anesthesia_name.lower() not in ['nan', 'none', '']:
-        req_anesth = mscrit_req['Код типа анестезии']
-        actual_anesth_val = ANESTHESIA_DICT.get(anesthesia_name)
-        
-        if actual_anesth_val is None:
-            errors.append(f"ИБ {ib_num}: Тип анестезии: указана неизвестная анестезия <b>'{anesthesia_name}'</b>. Проверьте опечатку.")
-        elif req_anesth == 1 and actual_anesth_val != 1:
-            errors.append(f"ИБ {ib_num}: Тип анестезии: для этой операции обязательна анестезия <b>Общая</b>, но у вас указана <b>'{anesthesia_name}'</b> (Это местная).")
+        anesthesia_name = str(op_row.get('Анестезия', '')).strip()
+
+        if anesthesia_name.lower() not in ['nan', 'none', '']:
+            req_anesth = mscrit_req['Код типа анестезии']
+            actual_anesth_val = ANESTHESIA_DICT.get(anesthesia_name)
+            
+            if actual_anesth_val is None:
+                errors.append(f"ИБ {ib_num}: Тип анестезии: указана неизвестная анестезия <b>'{anesthesia_name}'</b>. Проверьте опечатку.")
+            elif req_anesth == 1 and actual_anesth_val != 1:
+                errors.append(f"ИБ {ib_num}: Тип анестезии: для этой операции обязательна анестезия <b>Общая</b>, но у вас указана <b>'{anesthesia_name}'</b> (Это местная).")
+                
     if not is_skp:
         samotek_allowed = mscrit_req.get('Допустимость госпитализации "самотёк"', 1)
         canal_clean = str(canal).strip().lower() 
@@ -222,6 +225,9 @@ def _check_missing_operation_and_samotek(group, mscrit_match, ib_num, mes_code, 
         if samotek_val == 0:
             errors.append(f"ИБ {ib_num}: Ошибка канала поступления: госпитализация 'самотёк' невозможна под МЭС <b>{mes_code}</b> и диагноз <b>{mkb_code}</b>.")
 
+    if str(mes_code).strip() == '200513':
+        return errors
+
     a00_match = mscrit_match[mscrit_match['Код хирургической операции'] == 'A00.00']
     if a00_match.empty:
         sorted_g = group.dropna(subset=['Код прерывания госпитализации']).copy()
@@ -325,7 +331,7 @@ def _validate_operations_and_diagnoses(group, ref_mscrit, ref_msmkbe, ref_reeskp
             candidate_errors = []
             
             for row, mscrit_req in valid_candidates:
-                op_errs = _check_mscrit_operation_rules(row, mscrit_req, ib_num, canal, is_skp)
+                op_errs = _check_mscrit_operation_rules(row, mscrit_req, ib_num, canal, is_skp, mes_code)
                 if not op_errs:
                     perfect_match_found = True
                     break
