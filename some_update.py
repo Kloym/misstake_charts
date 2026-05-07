@@ -690,7 +690,7 @@ def main():
             target_mes = mes_code.lstrip('0') if mes_code.startswith('0') else mes_code
             if mes_code in recs_dict or target_mes in recs_dict:
                 found_mes = mes_code if mes_code in recs_dict else target_mes
-                criteria_set.add((department, found_mes))
+                temp_errors.append(f"ИБ {ib}: 💡 <b>Клинические рекомендации:</b> для МЭС <span class='clickable-mes' onclick='openModal(\"{found_mes}\")'>{mes_code}</span> имеются обязательные критерии. Кликните на номер МЭС для просмотра.")
 
             for err in temp_errors:
                 if err.startswith("DEPT::"):
@@ -700,19 +700,17 @@ def main():
                     all_errors.append({'department': department, 'message': err})
                 
         print("\n" + "="*50)
-        print(f"ПРОВЕРКА ЗАВЕРШЕНА. НАЙДЕНО ОШИБОК: {len(all_errors)}")
+        print(f"ПРОВЕРКА ЗАВЕРШЕНА. НАЙДЕНО ОШИБОК И ПОДСКАЗОК: {len(all_errors)}")
         print("="*50)
 
         for err_dict in all_errors:
             clean_msg = re.sub(r'<[^>]+>', '', err_dict['message'])
             print(f"[{err_dict['department']}] {clean_msg}")
 
-        criteria_list = [{'department': d, 'mes': m} for d, m in sorted(criteria_set)]
-            
-        if all_errors or criteria_list:
+        if all_errors:
             current_time = datetime.now().strftime("%d.%m.%Y_%H-%M")
             report_name = f"report_{current_time}.html"
-            generate_html_report(all_errors, criteria_list, recs_dict, output_path=os.path.join(INPUT_DIR, report_name))
+            generate_html_report(all_errors, recs_dict, output_path=os.path.join(INPUT_DIR, report_name))
 
         end_time = time.time()
         execution_time = end_time - start_time
