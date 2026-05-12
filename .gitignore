@@ -4,3 +4,4 @@ references/
 Mscrit_Checker.exe
 __pycache__/
 .pytest_cache/
+venv/

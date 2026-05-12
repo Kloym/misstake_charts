@@ -6,5 +6,6 @@ sudo docker cp extract_mscrit:/app/dist/Mscrit_Checker.exe ./Mscrit_Checker.exe
 
 sudo docker rm extract_mscrit
 
+python -m PyInstaller --noconfirm --clean --onefile --hidden-import pandas --hidden-import openpyxl some_update.py
 
-Если врач не проставил тип анастезии, то просто всем проставлять Местная
+python -m PyInstaller --noconfirm --clean --onefile --hidden-import pandas --hidden-import openpyxl merge_app.py

@@ -41,26 +41,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_chk += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-chk" checked onchange="filterChkTable()"> {d}</label></li>\n'
 
-    checked_rows_list = []
-    for row in checked_data:
-        mk = str(row.get('№ МК', ''))
-        dept = str(row.get('Отделение', ''))
-        emp = str(row.get('Сотрудник', ''))
-        ptype = str(row.get('Тип пациента', ''))
-        safe_dept = dept.replace('"', '&quot;')
-        
-        checked_rows_list.append(f"""
-            <tr class="chk-data-row" data-dept="{safe_dept}">
-                <td style="font-weight:bold; color:#2c3e50;">{mk}</td>
-                <td style="color:#7f8c8d; font-size:13px;">{dept}</td>
-                <td>{emp}</td>
-                <td>{ptype}</td>
-                <td style="color:#27ae60; font-weight:bold;">Проверено ✅</td>
-            </tr>
-        """)
-    checked_rows_html = "".join(checked_rows_list)
-
     recs_json = json.dumps(recs_dict, ensure_ascii=False)
+    checked_json = json.dumps(checked_data, ensure_ascii=False)
     
     html_content = f"""
     <!DOCTYPE html>
@@ -99,6 +81,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             
             .dropdown-check-list {{ display: block; position: relative; width: 100%; }}
             .dropdown-check-list .anchor {{ box-sizing: border-box; width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; display: block; font-size: 14px; color: #333; }}
+            .dropdown-check-list .anchor:after {{ content: '▼'; float: right; font-size: 10px; color: #7f8c8d; margin-top: 4px; }}
             .dropdown-check-list .items {{ padding: 8px; display: none; position: absolute; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 100%; z-index: 100; max-height: 250px; overflow-y: auto; list-style: none; margin: 0; box-sizing: border-box;}}
             .dropdown-check-list.visible .items {{ display: block; }}
             .dropdown-check-list ul.items li label {{ display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px; font-size: 13px; }}
@@ -127,6 +110,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             .rec-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
             .rec-table th, .rec-table td {{ border: 1px solid #e0e0e0; padding: 12px; font-size: 13px; line-height: 1.5; }}
             .rec-table th {{ background-color: #f8f9f9; }}
+            
+            .limit-warning {{ text-align: center; color: #7f8c8d; padding: 15px; font-size: 13px; font-style: italic; background: #fdfdfd; }}
             @keyframes fadein {{ from {{ opacity: 0; transform: translateY(-10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
         </style>
     </head>
@@ -222,7 +207,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             <div id="tab-checked" class="tab-content">
                 <div class="controls">
                     <div class="stats-container">
-                        <div class="stat-badge success">✅ Всего проверено: <span id="countTotalChk">0</span></div>
+                        <div class="stat-badge success">✅ Найдено записей: <span id="countTotalChk">0</span></div>
                     </div>
                     
                     <div class="filters-grid">
@@ -236,7 +221,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                                 </ul>
                             </div>
                         </div>
-                        <div class="filter-group"><label>Поиск по № ИБ:</label><input type="text" id="ibFilterChk" onkeyup="filterChkTable()"></div>
+                        <div class="filter-group"><label>Поиск по ИБ:</label><input type="text" id="ibFilterChk" onkeyup="filterChkTable()"></div>
                     </div>
                 </div>
                 
@@ -249,10 +234,11 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                             <th width="15%">Тип пациента</th>
                             <th width="15%">Статус</th>
                         </tr></thead>
-                        <tbody>
-                            {checked_rows_html}
+                        <tbody id="checkedTbody">
+                            <!-- Сюда JS мгновенно вставит строки -->
                         </tbody>
                     </table>
+                    <div id="limitWarning" class="limit-warning hidden-row">Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.</div>
                 </div>
             </div>
         </div>
@@ -268,9 +254,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
 
         <script>
             const recsData = {recs_json};
+            const checkedData = {checked_json}; // <-- ПРИНИМАЕМ 20 000 СТРОК НАПРЯМУЮ В ПАМЯТЬ JS
             const modal = document.getElementById("recModal");
 
-            // --- УПРАВЛЕНИЕ ВКЛАДКАМИ ---
             function switchTab(tabId, btnElement) {{
                 document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
                 document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -278,7 +264,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 btnElement.classList.add('active');
             }}
             
-            // --- ЛОГИКА ВЫПАДАЮЩИХ СПИСКОВ (Универсальная) ---
             function toggleDrop(listId) {{ 
                 document.getElementById(listId).classList.toggle('visible'); 
             }}
@@ -315,7 +300,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 else anchor.innerText = `Выбрано: ${{checked}}`;
             }}
 
-            // Инициализируем чекбоксы для обеих вкладок
             initCheckboxes('dept-cb-err', 'selectAllDeptsErr', 'deptCheckListErr', filterErrTable);
             initCheckboxes('dept-cb-chk', 'selectAllDeptsChk', 'deptCheckListChk', filterChkTable);
 
@@ -323,7 +307,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             function filterErrTable() {{
                 const ibSearch = document.getElementById("ibFilterErr").value.toLowerCase();
                 const errSearch = document.getElementById("textFilterErr").value.toLowerCase();
-                const checkedDepts = Array.from(document.querySelectorAll('.dept-cb-err:checked')).map(cb => cb.value);
+                const checkedDepts = new Set(Array.from(document.querySelectorAll('.dept-cb-err:checked')).map(cb => cb.value));
                 const rows = document.getElementsByClassName("err-data-row");
                 
                 let totalCount = 0; let errCount = 0; let recCount = 0;
@@ -332,10 +316,10 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     const row = rows[i];
                     const dept = row.getAttribute("data-dept");
                     const type = row.getAttribute("data-type");
-                    const ib = row.cells[2].innerText.toLowerCase();
-                    const err = row.cells[3].innerText.toLowerCase();
+                    const ib = row.cells[2].textContent.toLowerCase();
+                    const err = row.cells[3].textContent.toLowerCase();
                     
-                    if (checkedDepts.includes(dept) && ib.includes(ibSearch) && err.includes(errSearch)) {{
+                    if (checkedDepts.has(dept) && ib.includes(ibSearch) && err.includes(errSearch)) {{
                         row.classList.remove("hidden-row");
                         totalCount++;
                         if (type === "err") errCount++;
@@ -349,30 +333,49 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 document.getElementById("countRec").innerText = recCount;
             }}
 
-            // --- ФИЛЬТР ВКЛАДКИ 2 (Проверенные) ОПТИМИЗИРОВАННЫЙ ---
+            // --- ФИЛЬТР И РЕНДЕР ДЛЯ ВКЛАДКИ 2 ---
             function filterChkTable() {{
                 const ibSearch = document.getElementById("ibFilterChk").value.toLowerCase();
-                const checkedDepts = Array.from(document.querySelectorAll('.dept-cb-chk:checked')).map(cb => cb.value);
-                const rows = document.getElementsByClassName("chk-data-row");
+                const checkedDepts = new Set(Array.from(document.querySelectorAll('.dept-cb-chk:checked')).map(cb => cb.value));
                 
-                let totalCount = 0;
+                // 1. Мгновенная фильтрация массива в памяти JS (занимает ~1-2 мс)
+                const filteredData = checkedData.filter(row => {{
+                    const dept = String(row['Отделение'] || '');
+                    const mk = String(row['№ МК'] || '').toLowerCase();
+                    return checkedDepts.has(dept) && mk.includes(ibSearch);
+                }});
+
+                // 2. Берем только первые 500 строк, чтобы браузер не умер при отрисовке HTML
+                const renderLimit = 500;
+                const dataToRender = filteredData.slice(0, renderLimit);
                 
-                for (let i = 0; i < rows.length; i++) {{
-                    const row = rows[i];
-                    const dept = row.getAttribute("data-dept");
-                    const ib = row.cells[0].innerText.toLowerCase(); // В этой таблице ИБ в первой колонке (индекс 0)
-                    
-                    if (checkedDepts.includes(dept) && ib.includes(ibSearch)) {{
-                        row.classList.remove("hidden-row");
-                        totalCount++;
-                    }} else {{ 
-                        row.classList.add("hidden-row"); 
-                    }}
+                // 3. Формируем HTML только для тех строк, которые нужно показать
+                const htmlArray = dataToRender.map(row => {{
+                    const mk = String(row['№ МК'] || '');
+                    const dept = String(row['Отделение'] || '');
+                    const emp = String(row['Сотрудник'] || '');
+                    const ptype = String(row['Тип пациента'] || '');
+                    return `<tr>
+                                <td style="font-weight:bold; color:#2c3e50;">${{mk}}</td>
+                                <td style="color:#7f8c8d; font-size:13px;">${{dept}}</td>
+                                <td>${{emp}}</td>
+                                <td>${{ptype}}</td>
+                                <td style="color:#27ae60; font-weight:bold;">Проверено ✅</td>
+                            </tr>`;
+                }});
+
+                document.getElementById('checkedTbody').innerHTML = htmlArray.join('');
+                document.getElementById("countTotalChk").innerText = filteredData.length;
+
+                const warning = document.getElementById('limitWarning');
+                if (filteredData.length > renderLimit) {{
+                    warning.classList.remove('hidden-row');
+                }} else {{
+                    warning.classList.add('hidden-row');
                 }}
-                document.getElementById("countTotalChk").innerText = totalCount;
             }}
 
-            // --- ЛОГИКА ЭКСПОРТА (ОШИБКИ) ---
+            // --- ЭКСПОРТ И МОДАЛКА ---
             let fixedIBs = new Map();
             function toggleFix(index, ibNumber, deptName) {{
                 const row = document.getElementById('row_' + index);
@@ -397,7 +400,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 setTimeout(() => btn.innerText = "Скопировать", 2000);
             }}
 
-            // --- МОДАЛЬНОЕ ОКНО ---
             function openModal(mesCode) {{
                 const dataList = recsData[mesCode];
                 if(dataList && dataList.length > 0) {{
@@ -436,7 +438,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             function closeModal() {{ modal.style.display = "none"; }}
             window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
             
-            // Инициализация при загрузке страницы
             window.onload = function() {{ 
                 filterErrTable(); 
                 filterChkTable(); 
