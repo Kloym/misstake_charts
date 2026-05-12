@@ -8,7 +8,6 @@ import ctypes
 import sys
 
 def main():
-    # --- МАГИЯ 1: СДВИГАЕМ ЧЕРНОЕ ОКНО КОНСОЛИ ВЛЕВО ---
     if sys.platform == 'win32':
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()

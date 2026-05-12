@@ -117,7 +117,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
     </head>
     <body>
         <div class="container">
-            <h1>📝 Информационная панель</h1>
+            <h1>📝 Ошибки и карты для врачей</h1>
             
             <!-- Навигация по вкладкам -->
             <div class="tabs-nav">
