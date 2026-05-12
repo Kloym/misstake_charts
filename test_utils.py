@@ -26,15 +26,40 @@ def debug_print(msg):
         print(f"[DEBUG] {msg}")
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
-def generate_html_report(errors_data, recs_dict, output_path):
+def generate_html_report(errors_data, recs_dict, checked_data, output_path):
     errors_data = sorted(errors_data, key=lambda x: "Клинические рекомендации:" in x['message'])
     
-    unique_depts = sorted(list(set([err['department'] for err in errors_data])))
-    dept_checkboxes = ""
-    for d in unique_depts:
+    unique_depts_err = sorted(list(set([err['department'] for err in errors_data])))
+    dept_checkboxes_err = ""
+    for d in unique_depts_err:
         safe_val = d.replace('"', '&quot;')
-        dept_checkboxes += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb" checked onchange="filterTable()"> {d}</label></li>\n'
-    
+        dept_checkboxes_err += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-err" checked onchange="filterErrTable()"> {d}</label></li>\n'
+
+    unique_depts_chk = sorted(list(set([str(row.get('Отделение', '')) for row in checked_data if str(row.get('Отделение', ''))])))
+    dept_checkboxes_chk = ""
+    for d in unique_depts_chk:
+        safe_val = d.replace('"', '&quot;')
+        dept_checkboxes_chk += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-chk" checked onchange="filterChkTable()"> {d}</label></li>\n'
+
+    checked_rows_list = []
+    for row in checked_data:
+        mk = str(row.get('№ МК', ''))
+        dept = str(row.get('Отделение', ''))
+        emp = str(row.get('Сотрудник', ''))
+        ptype = str(row.get('Тип пациента', ''))
+        safe_dept = dept.replace('"', '&quot;')
+        
+        checked_rows_list.append(f"""
+            <tr class="chk-data-row" data-dept="{safe_dept}">
+                <td style="font-weight:bold; color:#2c3e50;">{mk}</td>
+                <td style="color:#7f8c8d; font-size:13px;">{dept}</td>
+                <td>{emp}</td>
+                <td>{ptype}</td>
+                <td style="color:#27ae60; font-weight:bold;">Проверено ✅</td>
+            </tr>
+        """)
+    checked_rows_html = "".join(checked_rows_list)
+
     recs_json = json.dumps(recs_dict, ensure_ascii=False)
     
     html_content = f"""
@@ -42,20 +67,28 @@ def generate_html_report(errors_data, recs_dict, output_path):
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
-        <title>Отчет по ошибкам (mscrit)</title>
+        <title>Отчет: Ошибки и Проверки</title>
         <style>
             body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 30px 20px; }}
             .container {{ max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
             h1 {{ margin: 0 0 20px 0; font-size: 1.5em; color: #2c3e50; }}
             
+            /* ВКЛАДКИ */
+            .tabs-nav {{ display: flex; gap: 20px; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; }}
+            .tab-btn {{ background: none; border: none; padding: 10px 15px; font-size: 16px; font-weight: bold; color: #7f8c8d; cursor: pointer; border-bottom: 3px solid transparent; transition: 0.3s; }}
+            .tab-btn:hover {{ color: #3498db; }}
+            .tab-btn.active {{ color: #3498db; border-bottom-color: #3498db; }}
+            .tab-content {{ display: none; animation: fadein 0.4s; }}
+            .tab-content.active {{ display: block; }}
+            
             .controls, .export-panel {{ background: #fdfdfd; padding: 15px; border-radius: 6px; border: 1px solid #e0e0e0; margin-bottom: 20px; }}
             
-            /* НОВЫЕ БЕЙДЖИ СТАТИСТИКИ */
             .stats-container {{ display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }}
             .stat-badge {{ padding: 8px 15px; border-radius: 6px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
             .stat-badge.total {{ background: #f8f9f9; color: #2c3e50; border: 1px solid #d5dbdb; }}
             .stat-badge.err {{ background: #fdedec; color: #c0392b; border: 1px solid #fadbd8; }}
             .stat-badge.rec {{ background: #f4ecf8; color: #8e44ad; border: 1px solid #e8daef; }}
+            .stat-badge.success {{ background: #eafaf1; color: #27ae60; border: 1px solid #d5f5e3; }}
             .stat-badge span {{ font-size: 16px; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); }}
             
             .filters-grid {{ display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }}
@@ -66,7 +99,6 @@ def generate_html_report(errors_data, recs_dict, output_path):
             
             .dropdown-check-list {{ display: block; position: relative; width: 100%; }}
             .dropdown-check-list .anchor {{ box-sizing: border-box; width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; display: block; font-size: 14px; color: #333; }}
-            .dropdown-check-list .anchor:after {{ content: '▼'; float: right; font-size: 10px; color: #7f8c8d; margin-top: 4px; }}
             .dropdown-check-list .items {{ padding: 8px; display: none; position: absolute; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 100%; z-index: 100; max-height: 250px; overflow-y: auto; list-style: none; margin: 0; box-sizing: border-box;}}
             .dropdown-check-list.visible .items {{ display: block; }}
             .dropdown-check-list ul.items li label {{ display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px; border-radius: 4px; font-size: 13px; }}
@@ -84,18 +116,6 @@ def generate_html_report(errors_data, recs_dict, output_path):
             .fixed-row td {{ text-decoration: line-through; opacity: 0.5; background-color: #f9f9f9; }}
             .hidden-row {{ display: none !important; }}
             
-            /* СТИЛИ ДЛЯ ПОДСКАЗОК ПО ОПЕРАЦИЯМ И ДИАГНОЗАМ */
-            .hint-details {{ margin-top: 10px; border: 1px solid #eee; border-radius: 4px; overflow: hidden; background: #fafafa; }}
-            .hint-details summary {{ padding: 8px 12px; cursor: pointer; font-weight: 600; color: #2980b9; font-size: 13px; outline: none; user-select: none; }}
-            .hint-details summary:hover {{ background: #f0f0f0; }}
-            .hint-content {{ padding: 10px 15px; border-top: 1px solid #eee; background: #fff; max-height: 250px; overflow-y: auto; font-size: 13px; color: #555; }}
-            .hint-content ul {{ margin: 0; padding-left: 20px; }}
-            .hint-content li {{ margin-bottom: 4px; }}
-            .hl-diag {{ background: #e8f8f5; color: #2980b9; padding: 2px 5px; border-radius: 3px; font-family: monospace; font-weight: bold; }}
-            .hl-oper {{ background: #fdf2e9; color: #d35400; padding: 2px 5px; border-radius: 3px; font-family: monospace; font-weight: bold; }}
-            .no-hint {{ color: #e74c3c; font-style: italic; font-size: 13px; }}
-            
-            /* СТИЛЬ КЛИКАБЕЛЬНОГО МЭСА ДЛЯ КЛИН. РЕКОМЕНДАЦИЙ */
             .clickable-mes {{ background: #8e44ad; color: white; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; cursor: pointer; text-decoration: none; transition: 0.2s; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
             .clickable-mes:hover {{ background: #9b59b6; transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15); }}
             
@@ -104,53 +124,58 @@ def generate_html_report(errors_data, recs_dict, output_path):
             .modal-content {{ background-color: #fff; margin: 5% auto; padding: 25px; border-radius: 8px; width: 95%; max-width: 1400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadein 0.3s; overflow-x: auto; }}
             .close-btn {{ color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }}
             .close-btn:hover {{ color: #333; text-decoration: none; }}
-            .modal-header {{ border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; color: #2c3e50; }}
-            
             .rec-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-            .rec-table th, .rec-table td {{ border: 1px solid #e0e0e0; padding: 12px; font-size: 13px; color: #333; line-height: 1.5; vertical-align: middle; }}
-            .rec-table th {{ background-color: #f8f9f9; color: #2c3e50; font-weight: bold; text-transform: none; }}
-            
+            .rec-table th, .rec-table td {{ border: 1px solid #e0e0e0; padding: 12px; font-size: 13px; line-height: 1.5; }}
+            .rec-table th {{ background-color: #f8f9f9; }}
             @keyframes fadein {{ from {{ opacity: 0; transform: translateY(-10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>📝 Отчет по ошибкам и критериям для врачей</h1>
+            <h1>📝 Информационная панель</h1>
             
-            <div class="controls">
-                <div class="stats-container">
-                    <div class="stat-badge total">Всего записей: <span id="countTotal">0</span></div>
-                    <div class="stat-badge err">🔴 Ошибок: <span id="countErr">0</span></div>
-                    <div class="stat-badge rec">🟣 Рекомендаций: <span id="countRec">0</span></div>
+            <!-- Навигация по вкладкам -->
+            <div class="tabs-nav">
+                <button class="tab-btn active" onclick="switchTab('tab-errors', this)">Ошибки и Критерии ({len(errors_data)})</button>
+                <button class="tab-btn" onclick="switchTab('tab-checked', this)">Проверенные карты ({len(checked_data)})</button>
+            </div>
+            
+            <!-- ВКЛАДКА 1: ОШИБКИ И РЕКОМЕНДАЦИИ -->
+            <div id="tab-errors" class="tab-content active">
+                <div class="controls">
+                    <div class="stats-container">
+                        <div class="stat-badge total">Всего записей: <span id="countTotalErr">0</span></div>
+                        <div class="stat-badge err">🔴 Ошибок: <span id="countErr">0</span></div>
+                        <div class="stat-badge rec">🟣 Рекомендаций: <span id="countRec">0</span></div>
+                    </div>
+                    
+                    <div class="filters-grid">
+                        <div class="filter-group">
+                            <label>Отделение:</label>
+                            <div id="deptCheckListErr" class="dropdown-check-list" tabindex="100">
+                                <span class="anchor" onclick="toggleDrop('deptCheckListErr')">Выбраны все отделения</span>
+                                <ul class="items">
+                                    <li><label><input type="checkbox" id="selectAllDeptsErr" checked onchange="toggleAllDepts('dept-cb-err', this, 'deptCheckListErr'); filterErrTable()"> <b>(Выбрать все)</b></label></li>
+                                    {dept_checkboxes_err}
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="filter-group"><label>Поиск по ИБ:</label><input type="text" id="ibFilterErr" onkeyup="filterErrTable()"></div>
+                        <div class="filter-group"><label>Поиск по тексту:</label><input type="text" id="textFilterErr" onkeyup="filterErrTable()"></div>
+                    </div>
                 </div>
                 
-                <div class="filters-grid">
-                    <div class="filter-group">
-                        <label>Отделение:</label>
-                        <div id="deptCheckList" class="dropdown-check-list" tabindex="100">
-                            <span class="anchor" onclick="toggleDeptDrop()">Выбраны все отделения</span>
-                            <ul class="items">
-                                <li><label><input type="checkbox" id="selectAllDepts" checked onchange="toggleAllDepts(this)"> <b>(Выбрать все)</b></label></li>
-                                {dept_checkboxes}
-                            </ul>
-                        </div>
+                <div class="export-panel">
+                    <div class="export-controls">
+                        <textarea id="summaryText" readonly placeholder="Отметьте галочками исправленные ИБ в таблице ниже и отправьте операторам..."></textarea>
+                        <button class="btn-copy" onclick="copySummary()" id="copyBtn">Скопировать</button>
                     </div>
-                    <div class="filter-group"><label>Поиск по ИБ:</label><input type="text" id="ibFilter" onkeyup="filterTable()"></div>
-                    <div class="filter-group"><label>Поиск по тексту:</label><input type="text" id="errorFilter" onkeyup="filterTable()"></div>
                 </div>
-            </div>
-            
-            <div class="export-panel">
-                <div class="export-controls">
-                    <textarea id="summaryText" readonly placeholder="Отметьте галочками исправленные ИБ в таблице ниже и отправьте операторам..."></textarea>
-                    <button class="btn-copy" onclick="copySummary()" id="copyBtn">Скопировать</button>
-                </div>
-            </div>
-            
-            <div class="table-container">
-                <table class="main-table" id="errorsTable">
-                    <thead><tr><th width="5%">Испр.</th><th width="25%">Отделение</th><th width="15%">Номер ИБ</th><th>Описание ошибки / Подсказка</th></tr></thead>
-                    <tbody>
+                
+                <div class="table-container">
+                    <table class="main-table" id="errorsTable">
+                        <thead><tr><th width="5%">Испр.</th><th width="25%">Отделение</th><th width="15%">Номер ИБ</th><th>Описание ошибки / Подсказка</th></tr></thead>
+                        <tbody>
     """
     
     for i, err_dict in enumerate(errors_data):
@@ -166,7 +191,6 @@ def generate_html_report(errors_data, recs_dict, output_path):
             error_text = err_msg
             
         row_type = "rec" if "Клинические рекомендации:" in error_text else "err"
-            
         error_text = error_text.replace("[СКП]", "<span style='padding:2px 6px; border-radius:3px; font-size:0.85em; font-weight:bold; background-color:#f39c12; color:white;'>СКП</span>")
         error_text = error_text.replace("[Реанимация]", "<span style='padding:2px 6px; border-radius:3px; font-size:0.85em; font-weight:bold; background-color:#e74c3c; color:white;'>Реанимация</span>")
             
@@ -180,7 +204,7 @@ def generate_html_report(errors_data, recs_dict, output_path):
         safe_dept = dept.replace("'", "\\'")
             
         html_content += f"""
-            <tr id="row_{i}" class="data-row" data-dept="{dept}" data-type="{row_type}">
+            <tr id="row_{i}" class="err-data-row" data-dept="{safe_dept}" data-type="{row_type}">
                 <td><input type="checkbox" class="checkbox-custom" id="check_{i}" onclick="toggleFix({i}, '{ib_text}', '{safe_dept}')"></td>
                 <td style="color:#7f8c8d; font-size:13px; font-weight:500;">{dept}</td>
                 <td style="font-weight:bold; color:#d35400;">{ib_text}</td>
@@ -189,11 +213,51 @@ def generate_html_report(errors_data, recs_dict, output_path):
         """
         
     html_content += f"""
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ВКЛАДКА 2: ПРОВЕРЕННЫЕ КАРТЫ -->
+            <div id="tab-checked" class="tab-content">
+                <div class="controls">
+                    <div class="stats-container">
+                        <div class="stat-badge success">✅ Всего проверено: <span id="countTotalChk">0</span></div>
+                    </div>
+                    
+                    <div class="filters-grid">
+                        <div class="filter-group">
+                            <label>Отделение:</label>
+                            <div id="deptCheckListChk" class="dropdown-check-list" tabindex="100">
+                                <span class="anchor" onclick="toggleDrop('deptCheckListChk')">Выбраны все отделения</span>
+                                <ul class="items">
+                                    <li><label><input type="checkbox" id="selectAllDeptsChk" checked onchange="toggleAllDepts('dept-cb-chk', this, 'deptCheckListChk'); filterChkTable()"> <b>(Выбрать все)</b></label></li>
+                                    {dept_checkboxes_chk}
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="filter-group"><label>Поиск по № ИБ:</label><input type="text" id="ibFilterChk" onkeyup="filterChkTable()"></div>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table class="main-table" id="checkedTable">
+                        <thead><tr>
+                            <th width="15%">№ ИБ</th>
+                            <th width="30%">Отделение</th>
+                            <th width="25%">Сотрудник</th>
+                            <th width="15%">Тип пациента</th>
+                            <th width="15%">Статус</th>
+                        </tr></thead>
+                        <tbody>
+                            {checked_rows_html}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
+        <!-- Модальное окно -->
         <div id="recModal" class="modal">
             <div class="modal-content">
                 <span class="close-btn" onclick="closeModal()">&times;</span>
@@ -205,88 +269,64 @@ def generate_html_report(errors_data, recs_dict, output_path):
         <script>
             const recsData = {recs_json};
             const modal = document.getElementById("recModal");
-            
-            function openModal(mesCode) {{
-                const dataList = recsData[mesCode];
-                if(dataList && dataList.length > 0) {{
-                    document.getElementById("modalTitle").innerText = "Клинические критерии для МЭС " + mesCode;
-                    const modalBody = document.getElementById("modalBody");
-                    modalBody.innerHTML = ''; 
-                    
-                    const table = document.createElement('table');
-                    table.className = 'rec-table';
-                    table.innerHTML = '<thead><tr><th width="15%">Обязательность</th><th width="40%">Критерии экспертизы</th><th width="20%">Документ</th><th width="25%">Поле документа</th></tr></thead>';
-                    const tbody = document.createElement('tbody');
-                    let lastCells = {{ req: null, crit: null, doc: null, field: null }};
-                    
-                    dataList.forEach(row => {{
-                        let tr = document.createElement('tr');
-                        const cols = [
-                            {{ key: 'req', text: (row['Обязательность'] || '').toString().trim() }},
-                            {{ key: 'crit', text: (row['Критерии экспертизы'] || '').toString().trim() }},
-                            {{ key: 'doc', text: (row['Документ'] || '').toString().trim() }},
-                            {{ key: 'field', text: (row['Поле документа'] || '').toString().trim() }}
-                        ];
-                        
-                        cols.forEach(col => {{
-                            let val = col.text;
-                            if (val === '' || val === 'nan' || val === 'None') {{
-                                if (lastCells[col.key]) {{ lastCells[col.key].rowSpan += 1; }} 
-                                else {{ let td = document.createElement('td'); tr.appendChild(td); lastCells[col.key] = td; }}
-                            }} else {{
-                                let td = document.createElement('td');
-                                td.innerHTML = val.replace(/\\n/g, '<br>');
-                                tr.appendChild(td);
-                                lastCells[col.key] = td;
-                            }}
-                        }});
-                        tbody.appendChild(tr);
-                    }});
-                    
-                    table.appendChild(tbody);
-                    modalBody.appendChild(table);
-                    modal.style.display = "block";
-                }}
+
+            // --- УПРАВЛЕНИЕ ВКЛАДКАМИ ---
+            function switchTab(tabId, btnElement) {{
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById(tabId).classList.add('active');
+                btnElement.classList.add('active');
             }}
             
-            function closeModal() {{ modal.style.display = "none"; }}
-            window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
-
-            const checkList = document.getElementById('deptCheckList');
-            function toggleDeptDrop() {{ checkList.classList.toggle('visible'); }}
-            document.addEventListener('click', function(event) {{ if (!checkList.contains(event.target) && !event.target.closest('.dropdown-check-list')) checkList.classList.remove('visible'); }});
-
-            function toggleAllDepts(source) {{
-                document.querySelectorAll('.dept-cb').forEach(cb => cb.checked = source.checked);
-                updateDeptLabel(); filterTable();
+            // --- ЛОГИКА ВЫПАДАЮЩИХ СПИСКОВ (Универсальная) ---
+            function toggleDrop(listId) {{ 
+                document.getElementById(listId).classList.toggle('visible'); 
             }}
-
-            document.querySelectorAll('.dept-cb').forEach(cb => {{
-                cb.addEventListener('change', function() {{
-                    const allChecked = document.querySelectorAll('.dept-cb:checked').length === document.querySelectorAll('.dept-cb').length;
-                    document.getElementById('selectAllDepts').checked = allChecked;
-                    updateDeptLabel(); filterTable();
+            
+            document.addEventListener('click', function(event) {{ 
+                document.querySelectorAll('.dropdown-check-list').forEach(list => {{
+                    if (!list.contains(event.target)) list.classList.remove('visible');
                 }});
             }});
 
-            function updateDeptLabel() {{
-                const total = document.querySelectorAll('.dept-cb').length;
-                const checked = document.querySelectorAll('.dept-cb:checked').length;
-                const anchor = checkList.querySelector('.anchor');
-                if (checked === total) anchor.innerText = "Выбраны все отделения";
-                else if (checked === 0) anchor.innerText = "Ничего не выбрано";
-                else anchor.innerText = `Выбрано отделений: ${{checked}}`;
+            function toggleAllDepts(cbClass, sourceCheckbox, listId) {{
+                document.querySelectorAll('.' + cbClass).forEach(cb => cb.checked = sourceCheckbox.checked);
+                updateDeptLabel(cbClass, listId);
             }}
 
-            function filterTable() {{
-                const ibSearch = document.getElementById("ibFilter").value.toLowerCase();
-                const errSearch = document.getElementById("errorFilter").value.toLowerCase();
-                const checkedDepts = Array.from(document.querySelectorAll('.dept-cb:checked')).map(cb => cb.value);
-                const rows = document.getElementsByClassName("data-row");
+            function initCheckboxes(cbClass, selectAllId, listId, filterFunc) {{
+                document.querySelectorAll('.' + cbClass).forEach(cb => {{
+                    cb.addEventListener('change', function() {{
+                        const total = document.querySelectorAll('.' + cbClass).length;
+                        const checked = document.querySelectorAll('.' + cbClass + ':checked').length;
+                        document.getElementById(selectAllId).checked = (total === checked);
+                        updateDeptLabel(cbClass, listId);
+                        filterFunc();
+                    }});
+                }});
+            }}
+
+            function updateDeptLabel(cbClass, listId) {{
+                const total = document.querySelectorAll('.' + cbClass).length;
+                const checked = document.querySelectorAll('.' + cbClass + ':checked').length;
+                const anchor = document.getElementById(listId).querySelector('.anchor');
+                if (checked === total) anchor.innerText = "Выбраны все отделения";
+                else if (checked === 0) anchor.innerText = "Ничего не выбрано";
+                else anchor.innerText = `Выбрано: ${{checked}}`;
+            }}
+
+            // Инициализируем чекбоксы для обеих вкладок
+            initCheckboxes('dept-cb-err', 'selectAllDeptsErr', 'deptCheckListErr', filterErrTable);
+            initCheckboxes('dept-cb-chk', 'selectAllDeptsChk', 'deptCheckListChk', filterChkTable);
+
+            // --- ФИЛЬТР ВКЛАДКИ 1 (Ошибки) ---
+            function filterErrTable() {{
+                const ibSearch = document.getElementById("ibFilterErr").value.toLowerCase();
+                const errSearch = document.getElementById("textFilterErr").value.toLowerCase();
+                const checkedDepts = Array.from(document.querySelectorAll('.dept-cb-err:checked')).map(cb => cb.value);
+                const rows = document.getElementsByClassName("err-data-row");
                 
-                let totalCount = 0;
-                let errCount = 0;
-                let recCount = 0;
+                let totalCount = 0; let errCount = 0; let recCount = 0;
                 
                 for (let i = 0; i < rows.length; i++) {{
                     const row = rows[i];
@@ -304,12 +344,35 @@ def generate_html_report(errors_data, recs_dict, output_path):
                         row.classList.add("hidden-row"); 
                     }}
                 }}
-                
-                document.getElementById("countTotal").innerText = totalCount;
+                document.getElementById("countTotalErr").innerText = totalCount;
                 document.getElementById("countErr").innerText = errCount;
                 document.getElementById("countRec").innerText = recCount;
             }}
 
+            // --- ФИЛЬТР ВКЛАДКИ 2 (Проверенные) ОПТИМИЗИРОВАННЫЙ ---
+            function filterChkTable() {{
+                const ibSearch = document.getElementById("ibFilterChk").value.toLowerCase();
+                const checkedDepts = Array.from(document.querySelectorAll('.dept-cb-chk:checked')).map(cb => cb.value);
+                const rows = document.getElementsByClassName("chk-data-row");
+                
+                let totalCount = 0;
+                
+                for (let i = 0; i < rows.length; i++) {{
+                    const row = rows[i];
+                    const dept = row.getAttribute("data-dept");
+                    const ib = row.cells[0].innerText.toLowerCase(); // В этой таблице ИБ в первой колонке (индекс 0)
+                    
+                    if (checkedDepts.includes(dept) && ib.includes(ibSearch)) {{
+                        row.classList.remove("hidden-row");
+                        totalCount++;
+                    }} else {{ 
+                        row.classList.add("hidden-row"); 
+                    }}
+                }}
+                document.getElementById("countTotalChk").innerText = totalCount;
+            }}
+
+            // --- ЛОГИКА ЭКСПОРТА (ОШИБКИ) ---
             let fixedIBs = new Map();
             function toggleFix(index, ibNumber, deptName) {{
                 const row = document.getElementById('row_' + index);
@@ -333,8 +396,51 @@ def generate_html_report(errors_data, recs_dict, output_path):
                 btn.innerText = "✅ Скопировано!";
                 setTimeout(() => btn.innerText = "Скопировать", 2000);
             }}
+
+            // --- МОДАЛЬНОЕ ОКНО ---
+            function openModal(mesCode) {{
+                const dataList = recsData[mesCode];
+                if(dataList && dataList.length > 0) {{
+                    document.getElementById("modalTitle").innerText = "Клинические критерии для МЭС " + mesCode;
+                    const modalBody = document.getElementById("modalBody");
+                    modalBody.innerHTML = ''; 
+                    const table = document.createElement('table'); table.className = 'rec-table';
+                    table.innerHTML = '<thead><tr><th width="15%">Обязательность</th><th width="40%">Критерии экспертизы</th><th width="20%">Документ</th><th width="25%">Поле документа</th></tr></thead>';
+                    const tbody = document.createElement('tbody');
+                    let lastCells = {{ req: null, crit: null, doc: null, field: null }};
+                    
+                    dataList.forEach(row => {{
+                        let tr = document.createElement('tr');
+                        const cols = [
+                            {{ key: 'req', text: (row['Обязательность'] || '').toString().trim() }},
+                            {{ key: 'crit', text: (row['Критерии экспертизы'] || '').toString().trim() }},
+                            {{ key: 'doc', text: (row['Документ'] || '').toString().trim() }},
+                            {{ key: 'field', text: (row['Поле документа'] || '').toString().trim() }}
+                        ];
+                        
+                        cols.forEach(col => {{
+                            let val = col.text;
+                            if (val === '' || val === 'nan' || val === 'None') {{
+                                if (lastCells[col.key]) {{ lastCells[col.key].rowSpan += 1; }} 
+                                else {{ let td = document.createElement('td'); tr.appendChild(td); lastCells[col.key] = td; }}
+                            }} else {{
+                                let td = document.createElement('td'); td.innerHTML = val.replace(/\\n/g, '<br>');
+                                tr.appendChild(td); lastCells[col.key] = td;
+                            }}
+                        }});
+                        tbody.appendChild(tr);
+                    }});
+                    table.appendChild(tbody); modalBody.appendChild(table); modal.style.display = "block";
+                }}
+            }}
+            function closeModal() {{ modal.style.display = "none"; }}
+            window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
             
-            window.onload = function() {{ filterTable(); }};
+            // Инициализация при загрузке страницы
+            window.onload = function() {{ 
+                filterErrTable(); 
+                filterChkTable(); 
+            }};
         </script>
     </body>
     </html>

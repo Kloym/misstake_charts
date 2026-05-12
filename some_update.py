@@ -707,10 +707,34 @@ def main():
             clean_msg = re.sub(r'<[^>]+>', '', err_dict['message'])
             print(f"[{err_dict['department']}] {clean_msg}")
 
-        if all_errors:
+        checked_data = []
+        try:
+            checked_files = glob.glob(os.path.join(INPUT_DIR, '*Проверенные*.xls*'))
+            if checked_files:
+                checked_file_path = checked_files[0]
+                df_checked = pd.read_excel(checked_file_path)
+
+                df_checked.columns = df_checked.columns.str.strip()
+
+                target_cols = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента']
+
+                actual_cols = [col for col in target_cols if col in df_checked.columns]
+                
+                if actual_cols:
+                    df_clean = df_checked[actual_cols].fillna('')
+                    checked_data = df_clean.to_dict('records')
+                    print(f"✅ Успешно загружено проверенных карт: {len(checked_data)}")
+                else:
+                    print(f"⚠️ В файле {checked_file_path} не найдены нужные колонки: {target_cols}")
+            else:
+                print("⚠️ Файл с проверенными картами (*Проверенные*.xls*) не найден в input_data.")
+        except Exception as e:
+            print(f"⚠️ Ошибка при обработке файла проверенных карт: {e}")
+
+        if all_errors or checked_data:
             current_time = datetime.now().strftime("%d.%m.%Y_%H-%M")
             report_name = f"report_{current_time}.html"
-            generate_html_report(all_errors, recs_dict, output_path=os.path.join(INPUT_DIR, report_name))
+            generate_html_report(all_errors, recs_dict, checked_data, output_path=os.path.join(INPUT_DIR, report_name))
 
         end_time = time.time()
         execution_time = end_time - start_time
