@@ -16,7 +16,7 @@ def main():
             pass
 
     print("=" * 75)
-    print(" 🛠️  АВТОМАТИЧЕСКИЙ СБОРЩИК ТАБЛИЦ (5 КОЛОНОК) 🛠️ ")
+    print(" 🛠️  АВТОМАТИЧЕСКИЙ СБОРЩИК ТАБЛИЦ (ПРОВЕРЕННЫЕ КАРТЫ) 🛠️ ")
     print("=" * 75)
     
     current_dir = os.getcwd()
@@ -43,7 +43,7 @@ def main():
     
     print("\nНачинаю обработку...\n" + "-"*40)
 
-    TARGET_COLS = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента', 'Дата окончания']
+    TARGET_COLS = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента', 'Дата окончания', 'ИД ПУМП']
     all_dataframes = []
     success_count = 0
 
@@ -71,7 +71,7 @@ def main():
                 print("\n" + "❗" * 30)
                 print(f"❌ ОШИБКА В ФАЙЛЕ: {file_name}")
                 print(f"Отсутствуют колонки: {missing_cols}")
-                print("Сделайте скриншот этого окна для Алексея!")
+                print("Сделайте скриншот этого окна для разработчика!")
                 print("❗" * 30 + "\n")
                 continue
 
@@ -85,8 +85,8 @@ def main():
             print("\n" + "❗" * 50)
             print(f"❌ КРИТИЧЕСКАЯ ОШИБКА В ФАЙЛЕ: {file_name}")
             if "unpack requires a buffer of 4 bytes" in error_msg:
-                print("Причина: Файл сохранен как HTML.")
-                print("Решение: Пересохраните файл в Excel как 'Книга Excel (.xlsx)'.")
+                print("Причина: Файл сохранен как веб-страница (HTML).")
+                print("Решение: Откройте его в Excel и пересохраните как 'Книга Excel (.xlsx)'.")
             else:
                 print(traceback.format_exc())
             print("📸 СДЕЛАЙТЕ СКРИНШОТ!")
