@@ -27,6 +27,7 @@ def debug_print(msg):
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
 def generate_html_report(errors_data, recs_dict, checked_data, output_path):
+    # --- Сортировка первой вкладки ---
     errors_data = sorted(errors_data, key=lambda x: "Клинические рекомендации:" in x['message'])
     
     unique_depts_err = sorted(list(set([err['department'] for err in errors_data])))
@@ -34,12 +35,30 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
     for d in unique_depts_err:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_err += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-err" checked onchange="filterErrTable()"> {d}</label></li>\n'
-
+    
+    # --- Подготовка для второй вкладки ---
+    # 1. Отделения
     unique_depts_chk = sorted(list(set([str(row.get('Отделение', '')) for row in checked_data if str(row.get('Отделение', ''))])))
     dept_checkboxes_chk = ""
     for d in unique_depts_chk:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_chk += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-chk" checked onchange="filterChkTable()"> {d}</label></li>\n'
+        
+    # 2. Даты выбытия
+    raw_dates = list(set([str(row.get('Дата выбытия', '')) for row in checked_data if str(row.get('Дата выбытия', ''))]))
+    
+    def date_sort_key(d):
+        if d == 'Нет даты': return '00000000'
+        parts = d.split('.')
+        if len(parts) == 3: return f"{parts[2]}{parts[1]}{parts[0]}"
+        return d
+        
+    unique_dates_chk = sorted(raw_dates, key=date_sort_key, reverse=True)
+    
+    date_checkboxes_chk = ""
+    for dt in unique_dates_chk:
+        safe_val = dt.replace('"', '&quot;')
+        date_checkboxes_chk += f'<li><label><input type="checkbox" value="{safe_val}" class="date-cb-chk" checked onchange="filterChkTable()"> {dt}</label></li>\n'
 
     recs_json = json.dumps(recs_dict, ensure_ascii=False)
     checked_json = json.dumps(checked_data, ensure_ascii=False)
@@ -74,7 +93,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             .stat-badge span {{ font-size: 16px; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); }}
             
             .filters-grid {{ display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }}
-            .filter-group {{ display: flex; flex-direction: column; gap: 5px; flex: 1 1 250px; min-width: 0; }}
+            .filter-group {{ display: flex; flex-direction: column; gap: 5px; flex: 1 1 200px; min-width: 0; }}
             .filter-group label {{ font-size: 0.85em; font-weight: 600; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; }}
             input[type="text"] {{ box-sizing: border-box; width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; outline: none; }}
             input[type="text"]:focus {{ border-color: #3498db; }}
@@ -221,6 +240,19 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                                 </ul>
                             </div>
                         </div>
+                        
+                        <!-- НОВЫЙ ФИЛЬТР ПО ДАТЕ -->
+                        <div class="filter-group">
+                            <label>Дата выбытия:</label>
+                            <div id="dateCheckListChk" class="dropdown-check-list" tabindex="100">
+                                <span class="anchor" onclick="toggleDrop('dateCheckListChk')">Выбраны все даты</span>
+                                <ul class="items">
+                                    <li><label><input type="checkbox" id="selectAllDatesChk" checked onchange="toggleAllDepts('date-cb-chk', this, 'dateCheckListChk'); filterChkTable()"> <b>(Выбрать все)</b></label></li>
+                                    {date_checkboxes_chk}
+                                </ul>
+                            </div>
+                        </div>
+
                         <div class="filter-group"><label>Поиск по ИБ:</label><input type="text" id="ibFilterChk" onkeyup="filterChkTable()"></div>
                     </div>
                 </div>
@@ -229,13 +261,13 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     <table class="main-table" id="checkedTable">
                         <thead><tr>
                             <th width="15%">№ ИБ</th>
-                            <th width="30%">Отделение</th>
-                            <th width="25%">Сотрудник</th>
+                            <th width="20%">Отделение</th>
+                            <th width="20%">Сотрудник</th>
                             <th width="15%">Тип пациента</th>
+                            <th width="15%">Дата выбытия</th>
                             <th width="15%">Статус</th>
                         </tr></thead>
                         <tbody id="checkedTbody">
-                            <!-- Сюда JS мгновенно вставит строки -->
                         </tbody>
                     </table>
                     <div id="limitWarning" class="limit-warning hidden-row">Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.</div>
@@ -254,7 +286,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
 
         <script>
             const recsData = {recs_json};
-            const checkedData = {checked_json}; // <-- ПРИНИМАЕМ 20 000 СТРОК НАПРЯМУЮ В ПАМЯТЬ JS
+            const checkedData = {checked_json}; 
             const modal = document.getElementById("recModal");
 
             function switchTab(tabId, btnElement) {{
@@ -276,7 +308,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
 
             function toggleAllDepts(cbClass, sourceCheckbox, listId) {{
                 document.querySelectorAll('.' + cbClass).forEach(cb => cb.checked = sourceCheckbox.checked);
-                updateDeptLabel(cbClass, listId);
+                updateDropdownLabel(cbClass, listId);
             }}
 
             function initCheckboxes(cbClass, selectAllId, listId, filterFunc) {{
@@ -285,23 +317,27 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                         const total = document.querySelectorAll('.' + cbClass).length;
                         const checked = document.querySelectorAll('.' + cbClass + ':checked').length;
                         document.getElementById(selectAllId).checked = (total === checked);
-                        updateDeptLabel(cbClass, listId);
+                        updateDropdownLabel(cbClass, listId);
                         filterFunc();
                     }});
                 }});
             }}
 
-            function updateDeptLabel(cbClass, listId) {{
+            function updateDropdownLabel(cbClass, listId) {{
                 const total = document.querySelectorAll('.' + cbClass).length;
                 const checked = document.querySelectorAll('.' + cbClass + ':checked').length;
                 const anchor = document.getElementById(listId).querySelector('.anchor');
-                if (checked === total) anchor.innerText = "Выбраны все отделения";
+                
+                let prefix = cbClass.includes('dept') ? "отделения" : "даты";
+                
+                if (checked === total) anchor.innerText = `Выбраны все ${{prefix}}`;
                 else if (checked === 0) anchor.innerText = "Ничего не выбрано";
                 else anchor.innerText = `Выбрано: ${{checked}}`;
             }}
 
             initCheckboxes('dept-cb-err', 'selectAllDeptsErr', 'deptCheckListErr', filterErrTable);
             initCheckboxes('dept-cb-chk', 'selectAllDeptsChk', 'deptCheckListChk', filterChkTable);
+            initCheckboxes('date-cb-chk', 'selectAllDatesChk', 'dateCheckListChk', filterChkTable); // Инициализация дат
 
             // --- ФИЛЬТР ВКЛАДКИ 1 (Ошибки) ---
             function filterErrTable() {{
@@ -333,40 +369,45 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 document.getElementById("countRec").innerText = recCount;
             }}
 
-            // --- ФИЛЬТР И РЕНДЕР ДЛЯ ВКЛАДКИ 2 ---
+            // --- ФИЛЬТР (С ДАТАМИ) ---
             function filterChkTable() {{
                 const ibSearch = document.getElementById("ibFilterChk").value.toLowerCase();
                 const checkedDepts = new Set(Array.from(document.querySelectorAll('.dept-cb-chk:checked')).map(cb => cb.value));
+                const checkedDates = new Set(Array.from(document.querySelectorAll('.date-cb-chk:checked')).map(cb => cb.value)); // Считываем выбранные даты
                 
-                // 1. Мгновенная фильтрация массива в памяти JS (занимает ~1-2 мс)
+                // Мгновенная фильтрация по трем условиям (ИБ, Отделение, Дата)
                 const filteredData = checkedData.filter(row => {{
                     const dept = String(row['Отделение'] || '');
                     const mk = String(row['№ МК'] || '').toLowerCase();
-                    return checkedDepts.has(dept) && mk.includes(ibSearch);
+                    const date = String(row['Дата выбытия'] || '');
+                    
+                    return checkedDepts.has(dept) && checkedDates.has(date) && mk.includes(ibSearch);
                 }});
 
-                // 2. Берем только первые 500 строк, чтобы браузер не умер при отрисовке HTML
                 const renderLimit = 500;
                 const dataToRender = filteredData.slice(0, renderLimit);
                 
-                // 3. Формируем HTML только для тех строк, которые нужно показать
+                // Добавил колонку с датой в шаблон
                 const htmlArray = dataToRender.map(row => {{
                     const mk = String(row['№ МК'] || '');
                     const dept = String(row['Отделение'] || '');
                     const emp = String(row['Сотрудник'] || '');
                     const ptype = String(row['Тип пациента'] || '');
+                    const date = String(row['Дата выбытия'] || '');
+                    
                     return `<tr>
                                 <td style="font-weight:bold; color:#2c3e50;">${{mk}}</td>
                                 <td style="color:#7f8c8d; font-size:13px;">${{dept}}</td>
                                 <td>${{emp}}</td>
                                 <td>${{ptype}}</td>
+                                <td style="font-family:monospace; color:#8e44ad; font-weight:bold;">${{date}}</td>
                                 <td style="color:#27ae60; font-weight:bold;">Проверено ✅</td>
                             </tr>`;
                 }});
 
                 document.getElementById('checkedTbody').innerHTML = htmlArray.join('');
                 document.getElementById("countTotalChk").innerText = filteredData.length;
-
+                
                 const warning = document.getElementById('limitWarning');
                 if (filteredData.length > renderLimit) {{
                     warning.classList.remove('hidden-row');

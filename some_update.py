@@ -716,16 +716,43 @@ def main():
 
                 df_checked.columns = df_checked.columns.str.strip()
 
-                target_cols = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента']
+                target_cols = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента', 'Дата окончания', 'ИД ПУМП']
 
                 actual_cols = [col for col in target_cols if col in df_checked.columns]
                 
-                if actual_cols:
+                if len(actual_cols) >= 4:
                     df_clean = df_checked[actual_cols].fillna('')
-                    checked_data = df_clean.to_dict('records')
-                    print(f"✅ Успешно загружено проверенных карт: {len(checked_data)}")
+
+                    if 'ИД ПУМП' in df_clean.columns:
+                        df_clean = df_clean[
+                            (df_clean['ИД ПУМП'].astype(str).str.strip() != '0') & 
+                            (df_clean['ИД ПУМП'].astype(str).str.strip() != '0.0') & 
+                            (df_clean['ИД ПУМП'].astype(str).str.strip() != 'nan') & 
+                            (df_clean['ИД ПУМП'].astype(str).str.strip() != '')
+                        ]
+
+                    if 'Дата окончания' in df_clean.columns:
+                        def format_ru_date(val):
+                            val = str(val).strip()
+                            if not val or val.lower() == 'nan': return 'Нет даты'
+                            date_part = val.split(' ')[0]
+                            if '-' in date_part and len(date_part) == 10:
+                                parts = date_part.split('-')
+                                if len(parts[0]) == 4:
+                                    return f"{parts[2]}.{parts[1]}.{parts[0]}"
+                            return date_part.replace('-', '.')
+                        
+                        df_clean['Дата выбытия'] = df_clean['Дата окончания'].apply(format_ru_date)
+                    else:
+                        df_clean['Дата выбытия'] = 'Нет даты'
+
+                    final_html_cols = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента', 'Дата выбытия']
+                    html_cols_to_keep = [c for c in final_html_cols if c in df_clean.columns]
+
+                    checked_data = df_clean[html_cols_to_keep].to_dict('records')
+                    print(f"✅ Успешно загружено проверенных карт (ИД ПУМП > 0): {len(checked_data)}")
                 else:
-                    print(f"⚠️ В файле {checked_file_path} не найдены нужные колонки: {target_cols}")
+                    print(f"⚠️ В файле {checked_file_path} не найдены нужные колонки.")
             else:
                 print("⚠️ Файл с проверенными картами (*Проверенные*.xls*) не найден в input_data.")
         except Exception as e:

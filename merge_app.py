@@ -16,16 +16,16 @@ def main():
             pass
 
     print("=" * 75)
-    print(" 🛠️  АВТОМАТИЧЕСКИЙ СБОРЩИК ТАБЛИЦ (ПРОВЕРЕННЫЕ КАРТЫ) 🛠️ ")
+    print(" 🛠️  АВТОМАТИЧЕСКИЙ СБОРЩИК ТАБЛИЦ (5 КОЛОНОК) 🛠️ ")
     print("=" * 75)
-
+    
     current_dir = os.getcwd()
     output_filename = "Проверенные.xlsx"
     
     print(f"\n📂 Сканирую папку: {current_dir}")
     
     all_excel_files = glob.glob(os.path.join(current_dir, "*.xls*"))
-    
+
     input_files = [
         f for f in all_excel_files 
         if os.path.basename(f) != output_filename and not os.path.basename(f).startswith("~$")
@@ -33,7 +33,7 @@ def main():
 
     if not input_files:
         print("\n❌ ОШИБКА: В папке не найдено ни одной таблицы для слияния!")
-        print(f"Убедитесь, что вы положили файлы сотрудников рядом с этой программой.")
+        print(f"Положите файлы сотрудников рядом с этой программой.")
         input("\nНажмите Enter для выхода...")
         return
 
@@ -43,7 +43,7 @@ def main():
     
     print("\nНачинаю обработку...\n" + "-"*40)
 
-    TARGET_COLS = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента']
+    TARGET_COLS = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента', 'Дата окончания']
     all_dataframes = []
     success_count = 0
 
@@ -71,7 +71,7 @@ def main():
                 print("\n" + "❗" * 30)
                 print(f"❌ ОШИБКА В ФАЙЛЕ: {file_name}")
                 print(f"Отсутствуют колонки: {missing_cols}")
-                print("Сделайте скриншот этого окна для разработчика!")
+                print("Сделайте скриншот этого окна для Алексея!")
                 print("❗" * 30 + "\n")
                 continue
 
@@ -85,17 +85,17 @@ def main():
             print("\n" + "❗" * 50)
             print(f"❌ КРИТИЧЕСКАЯ ОШИБКА В ФАЙЛЕ: {file_name}")
             if "unpack requires a buffer of 4 bytes" in error_msg:
-                print("Причина: Файл 'битый' или сохранен как HTML.")
-                print("Решение: Откройте его в Excel и пересохраните как 'Книга Excel (.xlsx)'.")
+                print("Причина: Файл сохранен как HTML.")
+                print("Решение: Пересохраните файл в Excel как 'Книга Excel (.xlsx)'.")
             else:
                 print(traceback.format_exc())
-            print("📸 СДЕЛАЙТЕ СКРИНШОТ ДЛЯ РАЗРАБОТЧИКА!")
+            print("📸 СДЕЛАЙТЕ СКРИНШОТ!")
             print("❗" * 50 + "\n")
 
     print("-" * 40)
     
     if not all_dataframes:
-        print("\n⚠️  Не удалось собрать данные. Итоговый файл не создан.")
+        print("\n⚠️  Слияние не удалось. Итоговый файл не создан.")
         input("\nНажмите Enter для выхода...")
         return
 
@@ -107,21 +107,19 @@ def main():
         final_df.to_excel(output_path, index=False)
         
         print(f"\n🎉 УСПЕХ! Слияние завершено.")
-        print(f"📈 Обработано файлов: {success_count} из {len(input_files)}")
-        print(f"📊 Всего строк в новом файле: {len(final_df)}")
-        print(f"\n💾 Файл создан: {output_filename}")
+        print(f"📈 Склеили файлов: {success_count} из {len(input_files)}")
+        print(f"📊 Всего строк: {len(final_df)}")
+        print(f"\n💾 Создан файл: {output_filename}")
 
     except PermissionError:
         print("\n" + "❗" * 50)
-        print(f"❌ ОШИБКА: Не могу сохранить файл '{output_filename}'")
-        print("Причина: Файл уже открыт в Excel.")
-        print("Решение: Закройте Excel и запустите программу снова.")
+        print(f"❌ ОШИБКА: Файл '{output_filename}' открыт в Excel!")
+        print("Закройте его и запустите программу снова.")
         print("❗" * 50)
     except Exception:
         print("\n" + "❗" * 50)
-        print("❌ НЕИЗВЕСТНАЯ ОШИБКА ПРИ СОХРАНЕНИИ:")
+        print("❌ ОШИБКА ПРИ СОХРАНЕНИИ:")
         print(traceback.format_exc())
-        print("📸 СДЕЛАЙТЕ СКРИНШОТ ДЛЯ РАЗРАБОТЧИКА!")
         print("❗" * 50)
 
     print("\n" + "=" * 75)
