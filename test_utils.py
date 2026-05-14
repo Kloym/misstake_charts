@@ -72,7 +72,10 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
         <style>
             body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 30px 20px; }}
             .container {{ max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
+            
+            /* Секретный заголовок для Excel */
             h1 {{ margin: 0 0 20px 0; font-size: 1.5em; color: #2c3e50; }}
+            .secret-export {{ cursor: default; user-select: none; }}
             
             /* ВКЛАДКИ */
             .tabs-nav {{ display: flex; gap: 20px; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; }}
@@ -136,7 +139,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
     </head>
     <body>
         <div class="container">
-            <h1>📝 Ошибки и карты для врачей</h1>
+            <!-- СЕКРЕТНАЯ КНОПКА (onclick на значок) -->
+            <h1><span class="secret-export" onclick="exportSecretExcel()">📝</span> Ошибки и карты для врачей</h1>
             
             <!-- Навигация по вкладкам -->
             <div class="tabs-nav">
@@ -178,13 +182,20 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 
                 <div class="table-container">
                     <table class="main-table" id="errorsTable">
-                        <thead><tr><th width="5%">Испр.</th><th width="25%">Отделение</th><th width="15%">Номер ИБ</th><th>Описание ошибки / Подсказка</th></tr></thead>
+                        <thead><tr>
+                            <th width="5%">Испр.</th>
+                            <th width="20%">Отделение</th>
+                            <th width="15%">Врач</th>
+                            <th width="15%">Номер ИБ</th>
+                            <th>Описание ошибки / Подсказка</th>
+                        </tr></thead>
                         <tbody>
     """
     
     for i, err_dict in enumerate(errors_data):
-        dept = err_dict['department']
-        err_msg = err_dict['message']
+        dept = err_dict.get('department', 'Неизвестно')
+        doc = err_dict.get('doctor', 'Не указан')
+        err_msg = err_dict.get('message', '')
         
         parts = err_msg.split(':', 1)
         if len(parts) == 2:
@@ -211,6 +222,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             <tr id="row_{i}" class="err-data-row" data-dept="{safe_dept}" data-type="{row_type}">
                 <td><input type="checkbox" class="checkbox-custom" id="check_{i}" onclick="toggleFix({i}, '{ib_text}', '{safe_dept}')"></td>
                 <td style="color:#7f8c8d; font-size:13px; font-weight:500;">{dept}</td>
+                <td style="color:#34495e; font-size:13px; font-weight:600;">{doc}</td>
                 <td style="font-weight:bold; color:#d35400;">{ib_text}</td>
                 <td style="color:#333; line-height:1.5;">{main_err}{hint_html}</td>
             </tr>
@@ -241,7 +253,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                             </div>
                         </div>
                         
-                        <!-- НОВЫЙ ФИЛЬТР ПО ДАТЕ -->
                         <div class="filter-group">
                             <label>Дата выбытия:</label>
                             <div id="dateCheckListChk" class="dropdown-check-list" tabindex="100">
@@ -252,6 +263,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                                 </ul>
                             </div>
                         </div>
+                        
+                        <!-- НОВЫЙ ФИЛЬТР: ПОИСК ПО СОТРУДНИКУ -->
+                        <div class="filter-group"><label>Поиск по сотруднику:</label><input type="text" id="docFilterChk" onkeyup="filterChkTable()"></div>
 
                         <div class="filter-group"><label>Поиск по ИБ:</label><input type="text" id="ibFilterChk" onkeyup="filterChkTable()"></div>
                     </div>
@@ -337,7 +351,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
 
             initCheckboxes('dept-cb-err', 'selectAllDeptsErr', 'deptCheckListErr', filterErrTable);
             initCheckboxes('dept-cb-chk', 'selectAllDeptsChk', 'deptCheckListChk', filterChkTable);
-            initCheckboxes('date-cb-chk', 'selectAllDatesChk', 'dateCheckListChk', filterChkTable); // Инициализация дат
+            initCheckboxes('date-cb-chk', 'selectAllDatesChk', 'dateCheckListChk', filterChkTable);
 
             // --- ФИЛЬТР ВКЛАДКИ 1 (Ошибки) ---
             function filterErrTable() {{
@@ -352,8 +366,10 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     const row = rows[i];
                     const dept = row.getAttribute("data-dept");
                     const type = row.getAttribute("data-type");
-                    const ib = row.cells[2].textContent.toLowerCase();
-                    const err = row.cells[3].textContent.toLowerCase();
+                    
+                    // Обновленные индексы ячеек, так как добавился "Врач"
+                    const ib = row.cells[3].textContent.toLowerCase();
+                    const err = row.cells[4].textContent.toLowerCase();
                     
                     if (checkedDepts.has(dept) && ib.includes(ibSearch) && err.includes(errSearch)) {{
                         row.classList.remove("hidden-row");
@@ -369,25 +385,26 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 document.getElementById("countRec").innerText = recCount;
             }}
 
-            // --- ФИЛЬТР (С ДАТАМИ) ---
+            // --- ФИЛЬТР ВКЛАДКИ 2 (С ДАТАМИ И СОТРУДНИКОМ) ---
             function filterChkTable() {{
                 const ibSearch = document.getElementById("ibFilterChk").value.toLowerCase();
+                const docSearch = document.getElementById("docFilterChk").value.toLowerCase(); // Поиск по врачу
                 const checkedDepts = new Set(Array.from(document.querySelectorAll('.dept-cb-chk:checked')).map(cb => cb.value));
-                const checkedDates = new Set(Array.from(document.querySelectorAll('.date-cb-chk:checked')).map(cb => cb.value)); // Считываем выбранные даты
+                const checkedDates = new Set(Array.from(document.querySelectorAll('.date-cb-chk:checked')).map(cb => cb.value));
                 
-                // Мгновенная фильтрация по трем условиям (ИБ, Отделение, Дата)
                 const filteredData = checkedData.filter(row => {{
                     const dept = String(row['Отделение'] || '');
                     const mk = String(row['№ МК'] || '').toLowerCase();
                     const date = String(row['Дата выбытия'] || '');
+                    const emp = String(row['Сотрудник'] || '').toLowerCase();
                     
-                    return checkedDepts.has(dept) && checkedDates.has(date) && mk.includes(ibSearch);
+                    // Добавлено условие поиска по сотруднику
+                    return checkedDepts.has(dept) && checkedDates.has(date) && mk.includes(ibSearch) && emp.includes(docSearch);
                 }});
 
                 const renderLimit = 500;
                 const dataToRender = filteredData.slice(0, renderLimit);
                 
-                // Добавил колонку с датой в шаблон
                 const htmlArray = dataToRender.map(row => {{
                     const mk = String(row['№ МК'] || '');
                     const dept = String(row['Отделение'] || '');
@@ -479,6 +496,48 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             function closeModal() {{ modal.style.display = "none"; }}
             window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
             
+            // --- СЕКРЕТНАЯ ВЫГРУЗКА В EXCEL ---
+            function exportSecretExcel() {{
+                const table = document.getElementById("errorsTable");
+                const cloneTable = table.cloneNode(true);
+                const rows = cloneTable.rows;
+                
+                for (let i = rows.length - 1; i >= 0; i--) {{
+                    if (rows[i].classList.contains("hidden-row")) {{
+                        cloneTable.deleteRow(i);
+                    }} else {{
+                        rows[i].deleteCell(0); // Удаляем столбец с галочками, чтобы Excel был чистым
+                    }}
+                }}
+                
+                const htmlTemplate = `
+                    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            table {{ border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }}
+                            th, td {{ border: 1px solid #dddddd; padding: 8px; text-align: left; vertical-align: top; }}
+                            th {{ background-color: #3498db; color: #ffffff; font-weight: bold; }}
+                            .hint-wrapper {{ color: #555555; font-size: 12px; margin-top: 5px; }}
+                        </style>
+                    </head>
+                    <body>
+                        ${{cloneTable.outerHTML}}
+                    </body>
+                    </html>
+                `;
+                
+                const blob = new Blob([htmlTemplate], {{ type: 'application/vnd.ms-excel' }});
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = "Сводка_ошибок.xls";
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }}
+
             window.onload = function() {{ 
                 filterErrTable(); 
                 filterChkTable(); 

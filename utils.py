@@ -94,7 +94,7 @@ def generate_html_report(errors_data, output_path):
     </head>
     <body>
         <div class="container">
-            <h1>📝 Отчет по ошибкам для врачей:</h1>
+            <h1><span onclick="exportSecretExcel()" style="cursor: default; user-select: none;">📝</span> Отчет по ошибкам для врачей</h1>
             
             <div class="controls">
                 <div class="stats-row">
@@ -282,6 +282,47 @@ def generate_html_report(errors_data, output_path):
                 const btn = document.getElementById('copyBtn');
                 btn.innerText = "✅ Скопировано!";
                 setTimeout(() => btn.innerText = "Скопировать", 2000);
+            }
+
+            function exportSecretExcel() {
+                const table = document.getElementById("errorsTable");
+                const cloneTable = table.cloneNode(true);
+                const rows = cloneTable.rows;
+
+                for (let i = rows.length - 1; i >= 0; i--) {
+                    if (rows[i].classList.contains("hidden-row")) {
+                        cloneTable.deleteRow(i);
+                    } else {
+                        rows[i].deleteCell(0);
+                    }
+                }
+
+                const htmlTemplate = `
+                    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }
+                            th, td { border: 1px solid #dddddd; padding: 8px; text-align: left; vertical-align: top; }
+                            th { background-color: #3498db; color: #ffffff; font-weight: bold; }
+                            .hint-wrapper { color: #555555; font-size: 12px; margin-top: 5px; }
+                        </style>
+                    </head>
+                    <body>
+                        ${cloneTable.outerHTML}
+                    </body>
+                    </html>
+                `;
+
+                const blob = new Blob([htmlTemplate], { type: 'application/vnd.ms-excel' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = "Сводка_ошибок.xls";
+
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             }
         </script>
     </body>
