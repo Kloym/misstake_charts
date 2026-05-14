@@ -17,16 +17,14 @@ def debug_ib():
     df_mov = pd.read_excel(mov_files[0])
     df_disch = pd.read_excel(disch_files[0])
     df_op = pd.read_excel(op_files[0])
-    
-    # Очистка и удаление .0
+
     df_mov['ИБ_clean'] = df_mov['Номер ИБ'].astype(str).str.replace(r'\.0$', '', regex=True).str.replace(r'-\d{4}', '', regex=True).str.strip()
     df_disch['ИБ_clean'] = df_disch['ИБ. Номер'].astype(str).str.replace(r'\.0$', '', regex=True).str.replace(r'-\d{4}', '', regex=True).str.strip()
     df_op['ИБ_clean'] = df_op['ИБ. Номер'].astype(str).str.replace(r'\.0$', '', regex=True).str.replace(r'-\d{4}', '', regex=True).str.strip()
     
     df_patients = pd.merge(df_mov, df_disch, on='ИБ_clean', how='inner', suffixes=('_mov', '_disch'))
     df_full = pd.merge(df_patients, df_op, on='ИБ_clean', how='left', suffixes=('', '_op'))
-    
-    # Универсальное удаление ведущих нулей у МЭС
+
     if 'МЭС. Код' in df_full.columns:
         df_full['МЭС. Код'] = df_full['МЭС. Код'].astype(str).apply(
             lambda x: x.split('.')[0].strip().lstrip('0') if x.startswith('0') else x.split('.')[0].strip()
@@ -38,8 +36,7 @@ def debug_ib():
         print(f"\n❌ ИБ {TARGET_IB} полностью исчезла! Проблема в названиях колонок или данных.")
     else:
         print(f"\n✅ ИБ {TARGET_IB} успешно дошла до финала слияния.\n")
-        
-        # --- НОВАЯ ЛОГИКА ПЕРЕБОРА ВСЕХ ДВИЖЕНИЙ ---
+
         unique_movements = group.drop_duplicates(subset=['МЭС. Код', 'Отделение'])
         print(f"🔍 Найдено уникальных этапов лечения (МЭС + Отделение): {len(unique_movements)}")
         
@@ -50,8 +47,7 @@ def debug_ib():
             print(f"\n   [{i}] ЭТАП:")
             print(f"       МЭС: {mes_code}")
             print(f"       Отделение: {department}")
-            
-            # Смотрим операции только для этого конкретного МЭСа
+
             sub_group = group[group['МЭС. Код'] == mov_row['МЭС. Код']]
             
             ops = set()
