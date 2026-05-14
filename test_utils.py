@@ -27,7 +27,6 @@ def debug_print(msg):
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
 def generate_html_report(errors_data, recs_dict, checked_data, output_path):
-    # --- Сортировка первой вкладки ---
     errors_data = sorted(errors_data, key=lambda x: "Клинические рекомендации:" in x['message'])
     
     unique_depts_err = sorted(list(set([err['department'] for err in errors_data])))
@@ -35,8 +34,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
     for d in unique_depts_err:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_err += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-err" checked onchange="filterErrTable()"> {d}</label></li>\n'
-    
-    # --- Подготовка для второй вкладки ---
+
     # 1. Отделения
     unique_depts_chk = sorted(list(set([str(row.get('Отделение', '')) for row in checked_data if str(row.get('Отделение', ''))])))
     dept_checkboxes_chk = ""
@@ -87,13 +85,23 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             
             .controls, .export-panel {{ background: #fdfdfd; padding: 15px; border-radius: 6px; border: 1px solid #e0e0e0; margin-bottom: 20px; }}
             
-            .stats-container {{ display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }}
+            .stats-container {{ display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 10px; }}
             .stat-badge {{ padding: 8px 15px; border-radius: 6px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
             .stat-badge.total {{ background: #f8f9f9; color: #2c3e50; border: 1px solid #d5dbdb; }}
             .stat-badge.err {{ background: #fdedec; color: #c0392b; border: 1px solid #fadbd8; }}
             .stat-badge.rec {{ background: #f4ecf8; color: #8e44ad; border: 1px solid #e8daef; }}
             .stat-badge.success {{ background: #eafaf1; color: #27ae60; border: 1px solid #d5f5e3; }}
-            .stat-badge span {{ font-size: 16px; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); }}
+            .stat-badge span {{ font-size: 16px; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); transition: 0.3s; }}
+
+            .clickable-badge {{ cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; user-select: none; }}
+            .clickable-badge:hover {{ transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); filter: brightness(0.95); }}
+            .clickable-badge.active-filter {{ transform: scale(0.98); box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); }}
+            #badgeErr.active-filter {{ box-shadow: 0 0 0 2px #c0392b; }}
+            #badgeRec.active-filter {{ box-shadow: 0 0 0 2px #8e44ad; }}
+            
+            .filter-alert {{ display: none; padding: 12px 15px; border-radius: 6px; font-size: 14px; font-weight: 500; margin-bottom: 15px; animation: fadein 0.3s; box-shadow: 0 2px 5px rgba(0,0,0,0.05); line-height: 1.4; }}
+            .filter-alert.err-mode {{ background-color: #fdf2f1; color: #a93226; border-left: 4px solid #c0392b; }}
+            .filter-alert.rec-mode {{ background-color: #f9f2fb; color: #7d3c98; border-left: 4px solid #8e44ad; }}
             
             .filters-grid {{ display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }}
             .filter-group {{ display: flex; flex-direction: column; gap: 5px; flex: 1 1 200px; min-width: 0; }}
@@ -123,8 +131,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             
             .clickable-mes {{ background: #8e44ad; color: white; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; cursor: pointer; text-decoration: none; transition: 0.2s; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
             .clickable-mes:hover {{ background: #9b59b6; transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15); }}
-            
-            /* Модальное окно */
+
             .modal {{ display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }}
             .modal-content {{ background-color: #fff; margin: 5% auto; padding: 25px; border-radius: 8px; width: 95%; max-width: 1400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadein 0.3s; overflow-x: auto; }}
             .close-btn {{ color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }}
@@ -139,23 +146,23 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
     </head>
     <body>
         <div class="container">
-            <!-- СЕКРЕТНАЯ КНОПКА (onclick на значок) -->
-            <h1><span class="secret-export" onclick="exportSecretExcel()">📝</span> Ошибки и карты для врачей</h1>
+            <h1><span class="secret-export" onclick="exportSecretExcel()" title="Экспорт в Excel">📝</span> Ошибки и карты для врачей</h1>
             
             <!-- Навигация по вкладкам -->
             <div class="tabs-nav">
                 <button class="tab-btn active" onclick="switchTab('tab-errors', this)">Ошибки и Критерии ({len(errors_data)})</button>
                 <button class="tab-btn" onclick="switchTab('tab-checked', this)">Проверенные карты ({len(checked_data)})</button>
             </div>
-            
-            <!-- ВКЛАДКА 1: ОШИБКИ И РЕКОМЕНДАЦИИ -->
+
             <div id="tab-errors" class="tab-content active">
                 <div class="controls">
                     <div class="stats-container">
-                        <div class="stat-badge total">Всего записей: <span id="countTotalErr">0</span></div>
-                        <div class="stat-badge err">🔴 Ошибок: <span id="countErr">0</span></div>
-                        <div class="stat-badge rec">🟣 Рекомендаций: <span id="countRec">0</span></div>
+                        <div class="stat-badge total">Всего записей на экране: <span id="countTotalErr">0</span></div>
+                        <div class="stat-badge err clickable-badge" id="badgeErr" onclick="toggleTypeFilter('err')" title="Кликните, чтобы оставить только ошибки">🔴 Ошибок: <span id="countErr">0</span></div>
+                        <div class="stat-badge rec clickable-badge" id="badgeRec" onclick="toggleTypeFilter('rec')" title="Кликните, чтобы оставить только рекомендации">🟣 Рекомендаций: <span id="countRec">0</span></div>
                     </div>
+
+                    <div id="filterAlert" class="filter-alert"></div>
                     
                     <div class="filters-grid">
                         <div class="filter-group">
@@ -353,42 +360,78 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             initCheckboxes('dept-cb-chk', 'selectAllDeptsChk', 'deptCheckListChk', filterChkTable);
             initCheckboxes('date-cb-chk', 'selectAllDatesChk', 'dateCheckListChk', filterChkTable);
 
-            // --- ФИЛЬТР ВКЛАДКИ 1 (Ошибки) ---
+            let currentTypeFilter = 'all';
+
+            function toggleTypeFilter(type) {{
+                document.getElementById('badgeErr').classList.remove('active-filter');
+                document.getElementById('badgeRec').classList.remove('active-filter');
+                const alertBox = document.getElementById('filterAlert');
+
+                if (currentTypeFilter === type) {{
+                    // Выключаем фильтр (возвращаем все)
+                    currentTypeFilter = 'all';
+                    alertBox.style.display = 'none';
+                    alertBox.className = 'filter-alert'; 
+                }} else {{
+                    currentTypeFilter = type;
+                    if (type === 'err') {{
+                        document.getElementById('badgeErr').classList.add('active-filter');
+                        alertBox.innerHTML = '<b>Внимание:</b> Сейчас отображаются ТОЛЬКО ОШИБКИ. Нажмите на красную кнопку "Ошибок" еще раз, чтобы вернуть весь список.';
+                        alertBox.className = 'filter-alert err-mode';
+                        alertBox.style.display = 'block';
+                    }} else if (type === 'rec') {{
+                        document.getElementById('badgeRec').classList.add('active-filter');
+                        alertBox.innerHTML = '<b>Внимание:</b> Сейчас отображаются ТОЛЬКО РЕКОМЕНДАЦИИ. Нажмите на фиолетовую кнопку "Рекомендаций" еще раз, чтобы вернуть весь список.';
+                        alertBox.className = 'filter-alert rec-mode';
+                        alertBox.style.display = 'block';
+                    }}
+                }}
+                filterErrTable();
+            }}
+
             function filterErrTable() {{
                 const ibSearch = document.getElementById("ibFilterErr").value.toLowerCase();
                 const errSearch = document.getElementById("textFilterErr").value.toLowerCase();
                 const checkedDepts = new Set(Array.from(document.querySelectorAll('.dept-cb-err:checked')).map(cb => cb.value));
                 const rows = document.getElementsByClassName("err-data-row");
                 
-                let totalCount = 0; let errCount = 0; let recCount = 0;
+                let visibleTotal = 0; 
+                let actualErrCount = 0; 
+                let actualRecCount = 0;
                 
                 for (let i = 0; i < rows.length; i++) {{
                     const row = rows[i];
                     const dept = row.getAttribute("data-dept");
                     const type = row.getAttribute("data-type");
                     
-                    // Обновленные индексы ячеек, так как добавился "Врач"
                     const ib = row.cells[3].textContent.toLowerCase();
                     const err = row.cells[4].textContent.toLowerCase();
+
+                    const matchesBase = checkedDepts.has(dept) && ib.includes(ibSearch) && err.includes(errSearch);
                     
-                    if (checkedDepts.has(dept) && ib.includes(ibSearch) && err.includes(errSearch)) {{
-                        row.classList.remove("hidden-row");
-                        totalCount++;
-                        if (type === "err") errCount++;
-                        if (type === "rec") recCount++;
+                    if (matchesBase) {{
+                        if (type === "err") actualErrCount++;
+                        if (type === "rec") actualRecCount++;
+
+                        const typeMatches = (currentTypeFilter === 'all' || type === currentTypeFilter);
+                        if (typeMatches) {{
+                            row.classList.remove("hidden-row");
+                            visibleTotal++;
+                        }} else {{
+                            row.classList.add("hidden-row");
+                        }}
                     }} else {{ 
                         row.classList.add("hidden-row"); 
                     }}
                 }}
-                document.getElementById("countTotalErr").innerText = totalCount;
-                document.getElementById("countErr").innerText = errCount;
-                document.getElementById("countRec").innerText = recCount;
+                document.getElementById("countTotalErr").innerText = visibleTotal;
+                document.getElementById("countErr").innerText = actualErrCount;
+                document.getElementById("countRec").innerText = actualRecCount;
             }}
 
-            // --- ФИЛЬТР ВКЛАДКИ 2 (С ДАТАМИ И СОТРУДНИКОМ) ---
             function filterChkTable() {{
                 const ibSearch = document.getElementById("ibFilterChk").value.toLowerCase();
-                const docSearch = document.getElementById("docFilterChk").value.toLowerCase(); // Поиск по врачу
+                const docSearch = document.getElementById("docFilterChk").value.toLowerCase(); 
                 const checkedDepts = new Set(Array.from(document.querySelectorAll('.dept-cb-chk:checked')).map(cb => cb.value));
                 const checkedDates = new Set(Array.from(document.querySelectorAll('.date-cb-chk:checked')).map(cb => cb.value));
                 
@@ -398,7 +441,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     const date = String(row['Дата выбытия'] || '');
                     const emp = String(row['Сотрудник'] || '').toLowerCase();
                     
-                    // Добавлено условие поиска по сотруднику
                     return checkedDepts.has(dept) && checkedDates.has(date) && mk.includes(ibSearch) && emp.includes(docSearch);
                 }});
 
@@ -495,8 +537,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             }}
             function closeModal() {{ modal.style.display = "none"; }}
             window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
-            
-            // --- СЕКРЕТНАЯ ВЫГРУЗКА В EXCEL ---
+
             function exportSecretExcel() {{
                 const table = document.getElementById("errorsTable");
                 const cloneTable = table.cloneNode(true);
@@ -506,7 +547,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     if (rows[i].classList.contains("hidden-row")) {{
                         cloneTable.deleteRow(i);
                     }} else {{
-                        rows[i].deleteCell(0); // Удаляем столбец с галочками, чтобы Excel был чистым
+                        rows[i].deleteCell(0); 
                     }}
                 }}
                 
