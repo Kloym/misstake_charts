@@ -291,7 +291,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                         <tbody id="checkedTbody">
                         </tbody>
                     </table>
-                    <div id="limitWarning" class="limit-warning hidden-row">Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.</div>
+                    <div id="limitWarning" class="limit-warning hidden-row" style="color: #d32f2f; background-color: #fdeaea; font-weight: bold; padding: 12px; border: 1px solid #f5c2c7; border-radius: 6px; text-align: center; margin-top: 15px;">
+                        ⚠️ Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.
+                    </div>
                 </div>
             </div>
         </div>
