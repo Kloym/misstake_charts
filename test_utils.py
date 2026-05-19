@@ -26,15 +26,18 @@ def debug_print(msg):
         print(f"[DEBUG] {msg}")
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
-def generate_html_report(errors_data, recs_dict, checked_data, output_path):
-    errors_data = sorted(errors_data, key=lambda x: "Клинические рекомендации:" in x['message'])
+def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, output_path):
+    # --- Сортировка первой вкладки ---
+    # Поднимаем наверх и клинические рекомендации, и экстренную госпитализацию
+    errors_data = sorted(errors_data, key=lambda x: ("Клинические рекомендации:" in x['message'] or "Экстренная госпитализация:" in x['message']))
     
     unique_depts_err = sorted(list(set([err['department'] for err in errors_data])))
     dept_checkboxes_err = ""
     for d in unique_depts_err:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_err += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-err" checked onchange="filterErrTable()"> {d}</label></li>\n'
-
+    
+    # --- Подготовка для второй вкладки ---
     # 1. Отделения
     unique_depts_chk = sorted(list(set([str(row.get('Отделение', '')) for row in checked_data if str(row.get('Отделение', ''))])))
     dept_checkboxes_chk = ""
@@ -60,6 +63,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
 
     recs_json = json.dumps(recs_dict, ensure_ascii=False)
     checked_json = json.dumps(checked_data, ensure_ascii=False)
+    emerg_json = json.dumps(emerg_dict, ensure_ascii=False)
     
     html_content = f"""
     <!DOCTYPE html>
@@ -92,7 +96,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             .stat-badge.rec {{ background: #f4ecf8; color: #8e44ad; border: 1px solid #e8daef; }}
             .stat-badge.success {{ background: #eafaf1; color: #27ae60; border: 1px solid #d5f5e3; }}
             .stat-badge span {{ font-size: 16px; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); transition: 0.3s; }}
-
+            
+            /* Стили для кликабельных счетчиков и плашки */
             .clickable-badge {{ cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; user-select: none; }}
             .clickable-badge:hover {{ transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); filter: brightness(0.95); }}
             .clickable-badge.active-filter {{ transform: scale(0.98); box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); }}
@@ -130,8 +135,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             .hidden-row {{ display: none !important; }}
             
             .clickable-mes {{ background: #8e44ad; color: white; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; cursor: pointer; text-decoration: none; transition: 0.2s; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-            .clickable-mes:hover {{ background: #9b59b6; transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15); }}
-
+            .clickable-mes:hover {{ filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15); }}
+            
+            /* Модальное окно */
             .modal {{ display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }}
             .modal-content {{ background-color: #fff; margin: 5% auto; padding: 25px; border-radius: 8px; width: 95%; max-width: 1400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadein 0.3s; overflow-x: auto; }}
             .close-btn {{ color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }}
@@ -148,12 +154,11 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
         <div class="container">
             <h1><span class="secret-export" onclick="exportSecretExcel()" title="Экспорт в Excel">📝</span> Ошибки и карты для врачей</h1>
             
-            <!-- Навигация по вкладкам -->
             <div class="tabs-nav">
                 <button class="tab-btn active" onclick="switchTab('tab-errors', this)">Ошибки и Критерии ({len(errors_data)})</button>
                 <button class="tab-btn" onclick="switchTab('tab-checked', this)">Проверенные карты ({len(checked_data)})</button>
             </div>
-
+            
             <div id="tab-errors" class="tab-content active">
                 <div class="controls">
                     <div class="stats-container">
@@ -161,7 +166,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                         <div class="stat-badge err clickable-badge" id="badgeErr" onclick="toggleTypeFilter('err')" title="Кликните, чтобы оставить только ошибки">🔴 Ошибок: <span id="countErr">0</span></div>
                         <div class="stat-badge rec clickable-badge" id="badgeRec" onclick="toggleTypeFilter('rec')" title="Кликните, чтобы оставить только рекомендации">🟣 Рекомендаций: <span id="countRec">0</span></div>
                     </div>
-
+                    
                     <div id="filterAlert" class="filter-alert"></div>
                     
                     <div class="filters-grid">
@@ -212,7 +217,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
             ib_text = "Неизвестно"
             error_text = err_msg
             
-        row_type = "rec" if "Клинические рекомендации:" in error_text else "err"
+        # Считаем "Рекомендацией" и Клинические рекомендации, и Экстренную госпитализацию
+        row_type = "rec" if ("Клинические рекомендации:" in error_text or "Экстренная госпитализация:" in error_text) else "err"
+        
         error_text = error_text.replace("[СКП]", "<span style='padding:2px 6px; border-radius:3px; font-size:0.85em; font-weight:bold; background-color:#f39c12; color:white;'>СКП</span>")
         error_text = error_text.replace("[Реанимация]", "<span style='padding:2px 6px; border-radius:3px; font-size:0.85em; font-weight:bold; background-color:#e74c3c; color:white;'>Реанимация</span>")
             
@@ -241,7 +248,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 </div>
             </div>
 
-            <!-- ВКЛАДКА 2: ПРОВЕРЕННЫЕ КАРТЫ -->
             <div id="tab-checked" class="tab-content">
                 <div class="controls">
                     <div class="stats-container">
@@ -271,7 +277,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                             </div>
                         </div>
                         
-                        <!-- НОВЫЙ ФИЛЬТР: ПОИСК ПО СОТРУДНИКУ -->
                         <div class="filter-group"><label>Поиск по сотруднику:</label><input type="text" id="docFilterChk" onkeyup="filterChkTable()"></div>
 
                         <div class="filter-group"><label>Поиск по ИБ:</label><input type="text" id="ibFilterChk" onkeyup="filterChkTable()"></div>
@@ -294,11 +299,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     <div id="limitWarning" class="limit-warning hidden-row" style="color: #d32f2f; background-color: #fdeaea; font-weight: bold; padding: 12px; border: 1px solid #f5c2c7; border-radius: 6px; text-align: center; margin-top: 15px;">
                         ⚠️ Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.
                     </div>
-                </div>
             </div>
         </div>
 
-        <!-- Модальное окно -->
         <div id="recModal" class="modal">
             <div class="modal-content">
                 <span class="close-btn" onclick="closeModal()">&times;</span>
@@ -310,6 +313,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
         <script>
             const recsData = {recs_json};
             const checkedData = {checked_json}; 
+            const emergData = {emerg_json};
+            
             const modal = document.getElementById("recModal");
 
             function switchTab(tabId, btnElement) {{
@@ -370,7 +375,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 const alertBox = document.getElementById('filterAlert');
 
                 if (currentTypeFilter === type) {{
-                    // Выключаем фильтр (возвращаем все)
                     currentTypeFilter = 'all';
                     alertBox.style.display = 'none';
                     alertBox.className = 'filter-alert'; 
@@ -408,13 +412,13 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     
                     const ib = row.cells[3].textContent.toLowerCase();
                     const err = row.cells[4].textContent.toLowerCase();
-
+                    
                     const matchesBase = checkedDepts.has(dept) && ib.includes(ibSearch) && err.includes(errSearch);
                     
                     if (matchesBase) {{
                         if (type === "err") actualErrCount++;
                         if (type === "rec") actualRecCount++;
-
+                        
                         const typeMatches = (currentTypeFilter === 'all' || type === currentTypeFilter);
                         if (typeMatches) {{
                             row.classList.remove("hidden-row");
@@ -477,7 +481,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                 }}
             }}
 
-            // --- ЭКСПОРТ И МОДАЛКА ---
             let fixedIBs = new Map();
             function toggleFix(index, ibNumber, deptName) {{
                 const row = document.getElementById('row_' + index);
@@ -537,9 +540,49 @@ def generate_html_report(errors_data, recs_dict, checked_data, output_path):
                     table.appendChild(tbody); modalBody.appendChild(table); modal.style.display = "block";
                 }}
             }}
+            
+            // НОВОЕ: Открытие модалки для экстренной госпитализации
+            function openEmergModal(key) {{
+                const dataList = emergData[key];
+                if(dataList && dataList.length > 0) {{
+                    const mesCodeForTitle = key.split('_')[0];
+                    document.getElementById("modalTitle").innerText = "Критерии экстренной госпитализации для МЭС " + mesCodeForTitle;
+                    
+                    const modalBody = document.getElementById("modalBody");
+                    modalBody.innerHTML = ''; 
+                    
+                    const table = document.createElement('table'); 
+                    table.className = 'rec-table';
+                    // Добавляем заголовки для всех 6 столбцов твоего Excel
+                    table.innerHTML = `<thead><tr>
+                        <th>№ п/п</th><th>Код услуги</th><th>Название услуги</th>
+                        <th>Код МКБ-10</th><th>Критерии экстренной госпитализации</th><th>Профиль</th>
+                    </tr></thead>`;
+                    const tbody = document.createElement('tbody');
+                    
+                    dataList.forEach(row => {{
+                        let tr = document.createElement('tr');
+                        // Вставляем значения из всех колонок, которые ты сохранял в словарь
+                        tr.innerHTML = `
+                            <td>${{row['№ п/п'] || ''}}</td>
+                            <td>${{row['Код услуги'] || ''}}</td>
+                            <td>${{row['Наименование услуги'] || ''}}</td>
+                            <td>${{row['Код по МКБ-10'] || ''}}</td>
+                            <td style="font-size: 14px; color: #2c3e50;">${{(row['Критерии'] || '').toString().replace(/\\n/g, '<br>')}}</td>
+                            <td>${{row['Профиль'] || ''}}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    }});
+                    
+                    table.appendChild(tbody); 
+                    modalBody.appendChild(table); 
+                    modal.style.display = "block";
+                }}
+            }}
+
             function closeModal() {{ modal.style.display = "none"; }}
             window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
-
+            
             function exportSecretExcel() {{
                 const table = document.getElementById("errorsTable");
                 const cloneTable = table.cloneNode(true);

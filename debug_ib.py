@@ -2,7 +2,7 @@ import pandas as pd
 import os, glob
 
 def debug_ib():
-    TARGET_IB = '69656'
+    TARGET_IB = '69892'
     print(f"\n{'='*50}\n 🕵️ ИЩЕЙКА ДЛЯ ИБ: {TARGET_IB}\n{'='*50}")
     
     INPUT_DIR = 'input_data/'
@@ -43,10 +43,12 @@ def debug_ib():
         for i, (idx, mov_row) in enumerate(unique_movements.iterrows(), 1):
             mes_code = str(mov_row['МЭС. Код']).strip()
             department = str(mov_row['Отделение']).strip()
+            diag = str(mov_row['Диагноз. МКБ-10']).strip()
             
             print(f"\n   [{i}] ЭТАП:")
             print(f"       МЭС: {mes_code}")
             print(f"       Отделение: {department}")
+            print(f"       Диагноз: {diag}")
 
             sub_group = group[group['МЭС. Код'] == mov_row['МЭС. Код']]
             

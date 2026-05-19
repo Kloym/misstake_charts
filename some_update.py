@@ -264,7 +264,7 @@ def _check_missing_operation_and_samotek(group, mscrit_match, ib_num, mes_code, 
             
     return errors
 
-# --- НОВАЯ УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ДЛЯ БЛОКА ОПЕРАЦИЙ ---
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ БЛОКА ОПЕРАЦИЙ ---
 
 def _validate_operations_and_diagnoses(group, ref_mscrit, ref_msmkbe, ref_reeskp, mes_code, mkb_code, search_mkbs, ib_num, department, canal, is_skp, has_diag_error, diag_error_msg, patient_type, doctor):
     errors = []
@@ -348,7 +348,6 @@ def _validate_operations_and_diagnoses(group, ref_mscrit, ref_msmkbe, ref_reeskp
                     perfect_match_found = True
                     break
                 else:
-                    # Привязываем ошибку операции к врачу
                     formatted_op_errs = [f"META::{department}::{doctor}::{e}" if not e.startswith("META::") else e for e in op_errs]
                     candidate_errors.extend(formatted_op_errs)
                     
@@ -497,7 +496,6 @@ def check_nil_patient(group, ref_msmkbe, ref_mscrit, ref_mkb10):
     
     return errors
 
-
 def check_standard_patient(group, ref_msmkbe, ref_mscrit, ref_reeskp, ref_mkb10, patient_type):
     errors = []
     mes_code = str(group['МЭС. Код'].iloc[0]).split('.')[0].strip()
@@ -618,6 +616,7 @@ def main():
 
         ref_mkb10['Шифр'] = ref_mkb10['Шифр'].astype(str).str.strip().str.upper()
         
+        # --- ЗАГРУЗКА КЛИНИЧЕСКИХ РЕКОМЕНДАЦИЙ ---
         recs_file = os.path.join(REF_DIR, 'recommendations.xlsx')
         recs_dict = {}
         if os.path.exists(recs_file):
@@ -636,6 +635,36 @@ def main():
         else:
             print("⚠️ Файл recommendations.xlsx не найден в папке references. Подсказки по клиническим критериям будут отключены.")
         
+        # --- ЗАГРУЗКА РЕКОМЕНДАЦИЙ ДЛЯ ЭКСТРЕННОЙ ГОСПИТАЛИЗАЦИИ ---
+        emerg_file = os.path.join(REF_DIR, 'emergency_recs.xlsx')
+        emerg_dict = {}
+        if os.path.exists(emerg_file):
+            emerg_df = pd.read_excel(emerg_file)
+            emerg_df.columns = emerg_df.columns.astype(str).str.replace('\n', '').str.replace('\r', '').str.strip()
+            
+            if 'Код услуги' in emerg_df.columns and 'Код по МКБ-10' in emerg_df.columns:
+                emerg_df['Код услуги'] = emerg_df['Код услуги'].astype(str).str.split('.').str[0].str.strip().str.lstrip('0')
+                emerg_df['Код по МКБ-10'] = emerg_df['Код по МКБ-10'].astype(str).str.strip().str.upper()
+                emerg_df = emerg_df.fillna('')
+                
+                for _, r in emerg_df.iterrows():
+                    m = r['Код услуги']
+                    d = r['Код по МКБ-10']
+                    key = f"{m}_{d}"
+                    if key not in emerg_dict:
+                        emerg_dict[key] = []
+
+                    emerg_dict[key].append({
+                        '№ п/п': r.get('№ п/п', ''),
+                        'Код услуги': m,
+                        'Наименование услуги': r.get('Наименование услуги', ''),
+                        'Код по МКБ-10': d,
+                        'Критерии': r.get('Критерии экстренной госпитализации', ''),
+                        'Профиль': r.get('Профиль', '')
+                    })
+        else:
+            print("⚠️ Файл emergency_recs.xlsx не найден в папке references. Подсказки по экстренной госпитализации будут отключены.")
+
         all_errors = []
         criteria_set = set()
         
@@ -655,12 +684,10 @@ def main():
 
         grouped = df_merged.groupby('ИБ_clean')
         print(f"Обнаружено пациентов (ИБ): {len(grouped)}. Начинаю проверку...")
-        
-        # --- НОВЫЙ "УМНЫЙ" ЦИКЛ ПРОВЕРКИ ---
+
         for ib, group in grouped:
             debug_print(f"--- Обработка ИБ: {ib} ---")
-            
-            # 1. ОБЩИЕ ПРОВЕРКИ ДЛЯ ВСЕЙ ИБ
+
             dept_errors = _check_department_rules(group, ib)
             if dept_errors:
                 for err in dept_errors:
@@ -684,7 +711,6 @@ def main():
                 
             temp_errors.extend(_check_interruption_code(group, ib))
 
-            # 2. ПРОВЕРКА КЛИНИЧЕСКИХ МЭС (ОПЕРАЦИИ И ДИАГНОЗЫ ПОСТРОЧНО)
             unique_movements = group.drop_duplicates(subset=['МЭС. Код', 'Отделение'])
             
             for _, mov_row in unique_movements.iterrows():
@@ -696,13 +722,31 @@ def main():
                 doctor = _get_doc(mov_row)
 
                 target_mes = mes_code.lstrip('0') if mes_code.startswith('0') else mes_code
+
                 if mes_code in recs_dict or target_mes in recs_dict:
                     found_mes = mes_code if mes_code in recs_dict else target_mes
                     temp_errors.append(f"META::{department}::{doctor}::ИБ {ib}: 💡 <b>Клинические рекомендации:</b> для МЭС <span class='clickable-mes' onclick='openModal(\"{found_mes}\")'>{mes_code}</span> имеются обязательные критерии. Кликните на номер МЭС для просмотра.")
 
-                if not is_pure_rean_mes:
-                    sub_group = group[group['МЭС. Код'] == mov_row['МЭС. Код']]
+                sub_group = group[group['МЭС. Код'] == mov_row['МЭС. Код']]
+                canal = str(sub_group['Канал по ДЗМ-56'].iloc[0]).strip().lower() if 'Канал по ДЗМ-56' in sub_group.columns else ''
+
+                if canal in ['самотек', 'самотёк', '103 поликлиника']:
+                    mkb_code_full = str(sub_group['Диагноз. МКБ-10'].iloc[0]).strip().upper() if 'Диагноз. МКБ-10' in sub_group.columns else ''
+                    mkb_base = mkb_code_full.split('.')[0]
                     
+                    key_full = f"{target_mes}_{mkb_code_full}"
+                    key_base = f"{target_mes}_{mkb_base}"
+                    
+                    found_emerg_key = None
+                    if key_full in emerg_dict: found_emerg_key = key_full
+                    elif key_base in emerg_dict: found_emerg_key = key_base
+                    elif f"{mes_code}_{mkb_code_full}" in emerg_dict: found_emerg_key = f"{mes_code}_{mkb_code_full}"
+                    elif f"{mes_code}_{mkb_base}" in emerg_dict: found_emerg_key = f"{mes_code}_{mkb_base}"
+                    
+                    if found_emerg_key:
+                        temp_errors.append(f"META::{department}::{doctor}::ИБ {ib}: 💡 <b>Экстренная госпитализация:</b> Этот пациент поступил по каналу 'самотёк'. Для МЭС <span class='clickable-mes' style='background:#e67e22;' onclick='openEmergModal(\"{found_emerg_key}\")'>{mes_code}</span> и диагноза <b>{mkb_code_full}</b> есть критерии экстренности. Кликните на МЭС для просмотра.")
+
+                if not is_pure_rean_mes:
                     patient_type = str(sub_group['ПУМП. Тип пациента'].iloc[0]).strip().upper() if 'ПУМП. Тип пациента' in sub_group.columns else 'UNKNOWN'
                     
                     if patient_type == 'НР':
@@ -801,7 +845,7 @@ def main():
         if all_errors or checked_data:
             current_time = datetime.now().strftime("%d.%m.%Y_%H-%M")
             report_name = f"report_{current_time}.html"
-            generate_html_report(all_errors, recs_dict, checked_data, output_path=os.path.join(INPUT_DIR, report_name))
+            generate_html_report(all_errors, recs_dict, checked_data, emerg_dict, output_path=os.path.join(INPUT_DIR, report_name))
 
         end_time = time.time()
         execution_time = end_time - start_time
