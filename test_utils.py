@@ -27,8 +27,16 @@ def debug_print(msg):
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
 def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, output_path):
-    # --- Сортировка первой вкладки ---
-    # Поднимаем наверх и клинические рекомендации, и экстренную госпитализацию
+    def clean_dept_name(name):
+        return " ".join(str(name).strip().title().split())
+
+    for err in errors_data:
+        err['department'] = clean_dept_name(err.get('department', 'Неизвестно'))
+
+    for row in checked_data:
+        if 'Отделение' in row and row['Отделение']:
+            row['Отделение'] = clean_dept_name(row['Отделение'])
+
     errors_data = sorted(errors_data, key=lambda x: ("Клинические рекомендации:" in x['message'] or "Экстренная госпитализация:" in x['message']))
     
     unique_depts_err = sorted(list(set([err['department'] for err in errors_data])))
@@ -36,7 +44,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
     for d in unique_depts_err:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_err += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-err" checked onchange="filterErrTable()"> {d}</label></li>\n'
-    
     # --- Подготовка для второй вкладки ---
     # 1. Отделения
     unique_depts_chk = sorted(list(set([str(row.get('Отделение', '')) for row in checked_data if str(row.get('Отделение', ''))])))
