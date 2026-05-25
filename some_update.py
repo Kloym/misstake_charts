@@ -136,11 +136,19 @@ def _check_interruption_code(group, ib_num):
     if unique_movs.empty:
         return errors
 
-    if 'Дата выбытия' in unique_movs.columns:
-        unique_movs['temp_date'] = pd.to_datetime(unique_movs['Дата выбытия'], dayfirst=True, errors='coerce')
-        sorted_group = unique_movs.sort_values(by=['temp_date', 'Дата поступления'])
+    col_out = 'Дата выбытия'
+    if 'Дата окончания' in unique_movs.columns: col_out = 'Дата окончания'
+    elif 'Дата выбытия_mov' in unique_movs.columns: col_out = 'Дата выбытия_mov'
+        
+    col_in = 'Дата поступления'
+    if 'Дата начала' in unique_movs.columns: col_in = 'Дата начала'
+    elif 'Дата поступления_mov' in unique_movs.columns: col_in = 'Дата поступления_mov'
+
+    if col_out in unique_movs.columns and col_in in unique_movs.columns:
+        unique_movs['temp_date'] = pd.to_datetime(unique_movs[col_out], dayfirst=True, errors='coerce')
+        sorted_group = unique_movs.sort_values(by=['temp_date', col_in])
     else:
-        sorted_group = unique_movs.sort_values(by='Дата поступления')
+        sorted_group = unique_movs.sort_values(by=col_in if col_in in unique_movs.columns else 'МЭС. Код')
 
     if len(sorted_group) > 1:
         for idx in range(len(sorted_group) - 1):
@@ -383,12 +391,21 @@ def _validate_operations_and_diagnoses(group, ref_mscrit, ref_msmkbe, ref_reeskp
 def check_reanimation_logic(group, ib_num):
     errors = []
     try:
-        if 'Дата выбытия' not in group.columns:
-            return [f"ИБ {ib_num}: [Реанимация] В таблице 'Движение' нет столбца 'Дата выбытия' для расчета дней."]
+        col_in = 'Дата поступления'
+        col_out = 'Дата выбытия'
+        
+        if 'Дата начала' in group.columns: col_in = 'Дата начала'
+        elif 'Дата поступления_mov' in group.columns: col_in = 'Дата поступления_mov'
+        
+        if 'Дата окончания' in group.columns: col_out = 'Дата окончания'
+        elif 'Дата выбытия_mov' in group.columns: col_out = 'Дата выбытия_mov'
+
+        if col_out not in group.columns or col_in not in group.columns:
+            return [f"ИБ {ib_num}: [Реанимация] В таблицах не найдены колонки дат перевода для расчета дней."]
             
-        unique_movs = group.drop_duplicates(subset=['Дата поступления', 'Дата выбытия', 'Отделение']).copy()
-        unique_movs['temp_date'] = pd.to_datetime(unique_movs['Дата выбытия'], dayfirst=True, errors='coerce')
-        sorted_movs = unique_movs.sort_values(by=['temp_date', 'Дата поступления'])
+        unique_movs = group.drop_duplicates(subset=[col_in, col_out, 'Отделение']).copy()
+        unique_movs['temp_date'] = pd.to_datetime(unique_movs[col_out], dayfirst=True, errors='coerce')
+        sorted_movs = unique_movs.sort_values(by=['temp_date', col_in])
         last_mov_idx = sorted_movs.index[-1] if not sorted_movs.empty else None
         
         rean_rows = unique_movs[unique_movs['Отделение'].astype(str).str.lower().str.contains('реанимац', na=False)]
@@ -412,9 +429,9 @@ def check_reanimation_logic(group, ib_num):
                     errors.append(f"META::{row_dept}::{row_doc}::ИБ {ib_num}: [Реанимация] Ошибка МЭС: в '{row_dept}' указан непрофильный МЭС <b>{mes_code}</b>. Для нахождения в реанимации требуется специальный МЭС.")
                     continue 
 
-            if pd.notna(row['Дата поступления']) and pd.notna(row['Дата выбытия']):
-                d_in = pd.to_datetime(row['Дата поступления'], dayfirst=True)
-                d_out = pd.to_datetime(row['Дата выбытия'], dayfirst=True)
+            if pd.notna(row[col_in]) and pd.notna(row[col_out]):
+                d_in = pd.to_datetime(row[col_in], dayfirst=True)
+                d_out = pd.to_datetime(row[col_out], dayfirst=True)
 
                 hours = (d_out - d_in).total_seconds() / 3600.0
                 if hours <= 0: 
