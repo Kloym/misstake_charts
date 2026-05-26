@@ -165,7 +165,9 @@ def _check_interruption_code(group, ib_num):
                 display_code = "ПУСТО" if code == 'NAN' else code
                 errors.append(f"META::{row_dept}::{row_doc}::ИБ {ib_num}: Множественные переводы: промежуточные коды прерывания должны быть строго '<b>7</b>', а в выписке №{idx+1} указано '<b>{display_code}</b>'.")
 
-    for _, row in sorted_group.iterrows():
+    last_row_index = len(sorted_group) - 1
+    
+    for current_idx, (_, row) in enumerate(sorted_group.iterrows()):
         row_dept = str(row.get('Отделение', '')).strip()
         row_doc = _get_doc(row)
         mes_code = str(row['МЭС. Код']).split('.')[0].strip()
@@ -174,6 +176,10 @@ def _check_interruption_code(group, ib_num):
         display_code = "ПУСТО" if code == 'NAN' else code
         mes_clean = mes_code.lstrip('0') if mes_code.startswith('0') else mes_code
         is_special = mes_code in SPECIAL_PROJECT_MES or mes_clean in SPECIAL_PROJECT_MES
+
+        is_last_row = (current_idx == last_row_index)
+        if not is_last_row and code == '7':
+            continue
 
         if is_special:
             if patient_type not in ['ЗЛ', 'ИН', 'ИНОГОРОДНИЙ', 'НР', 'НИЛ']:
