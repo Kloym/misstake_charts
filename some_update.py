@@ -6,7 +6,7 @@ import glob
 from datetime import datetime
 import re
 import traceback
-from test_utils import ANESTHESIA_DICT, DIFFICULT_DEPARTMENTS, debug_print, generate_html_report
+from utils import ANESTHESIA_DICT, DIFFICULT_DEPARTMENTS, debug_print, generate_html_report
 
 
 # --- ФУНКЦИИ ГЕНЕРАЦИИ ПОДСКАЗОК ПО РАЗНЫМ СПРАВОЧНИКАМ ---
@@ -98,6 +98,64 @@ def load_and_merge_data(mov_path, disch_path, op_path):
         )
     
     return df_full
+
+def check_consistent_mes_per_dept(group, ib_num):
+    errors = []
+    
+    unique_movs = group.drop_duplicates(subset=['МЭС. Код', 'Отделение', 'Дата поступления']).copy()
+    if unique_movs.empty:
+        return errors
+
+    col_out = 'Дата выбытия'
+    if 'Дата окончания' in unique_movs.columns: col_out = 'Дата окончания'
+    elif 'Дата выбытия_mov' in unique_movs.columns: col_out = 'Дата выбытия_mov'
+        
+    col_in = 'Дата поступления'
+    if 'Дата начала' in unique_movs.columns: col_in = 'Дата начала'
+    elif 'Дата поступления_mov' in unique_movs.columns: col_in = 'Дата поступления_mov'
+
+    if col_out in unique_movs.columns and col_in in unique_movs.columns:
+        unique_movs['temp_date'] = pd.to_datetime(unique_movs[col_out], dayfirst=True, errors='coerce')
+        sorted_group = unique_movs.sort_values(by=['temp_date', col_in]).reset_index(drop=True)
+    else:
+        sorted_group = unique_movs.sort_values(by=col_in if col_in in unique_movs.columns else 'МЭС. Код').reset_index(drop=True)
+
+    final_dept = None
+    final_mes = None
+    
+    for idx in range(len(sorted_group)-1, -1, -1):
+        row = sorted_group.iloc[idx]
+        dept = str(row.get('Отделение', '')).strip()
+        dept_lower = dept.lower()
+        
+        if 'реанимац' in dept_lower or 'орит' in dept_lower or 'оар' in dept_lower:
+            continue
+            
+        final_dept = dept
+        final_mes = str(row.get('МЭС. Код', '')).split('.')[0].strip()
+        break 
+
+    if final_dept and final_mes:
+        wrong_moves = []
+        last_error_doc = "Неизвестно"
+        
+        for idx in range(len(sorted_group)):
+            row = sorted_group.iloc[idx]
+            dept = str(row.get('Отделение', '')).strip()
+            
+            if dept == final_dept:
+                current_mes = str(row.get('МЭС. Код', '')).split('.')[0].strip()
+
+                if current_mes != final_mes:
+                    mov_num = idx + 1 
+                    wrong_moves.append(f"в <b>{mov_num}-м</b> движении (указан {current_mes})")
+                    last_error_doc = _get_doc(row) if '_get_doc' in globals() else str(row.get('Врач', 'Неизвестно')).strip()
+
+        if wrong_moves:
+            moves_str = ", ".join(wrong_moves)
+            errors.append(f"META::{final_dept}::{last_error_doc}::ИБ {ib_num}: Расхождение МЭС: {moves_str}. На промежуточных этапах коды должны строго соответствовать выписному МЭСу <b>{final_mes}</b> для финального отделения ({final_dept}).")
+            
+    return list(dict.fromkeys(errors))
 
 def _check_mscrit_operation_rules(op_row, mscrit_req, ib_num, canal, is_skp, mes_code=""):
     errors = []
@@ -733,6 +791,7 @@ def main():
                 temp_errors.extend(check_reanimation_logic(group, ib))
                 
             temp_errors.extend(_check_interruption_code(group, ib))
+            temp_errors.extend(check_consistent_mes_per_dept(group, ib))
 
             unique_movements = group.drop_duplicates(subset=['МЭС. Код', 'Отделение'])
             

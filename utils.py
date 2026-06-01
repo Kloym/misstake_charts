@@ -28,7 +28,9 @@ def debug_print(msg):
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
 def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, output_path):
     def clean_dept_name(name):
-        return " ".join(str(name).strip().title().split())
+        if not name or str(name).lower() == 'nan': 
+            return "Неизвестно"
+        return " ".join(str(name).replace('\xa0', ' ').strip().split()).capitalize()
 
     for err in errors_data:
         err['department'] = clean_dept_name(err.get('department', 'Неизвестно'))
@@ -77,7 +79,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Дашборд: Ошибки и Проверки</title>
+        <title>Отчет: Ошибки и Проверки</title>
         <style>
             :root {{
                 --primary: #4f46e5;
@@ -154,6 +156,19 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             .dropdown-check-list {{ position: relative; width: 100%; }}
             .dropdown-check-list .anchor {{ width: 100%; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: #f9fafb; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem; transition: 0.2s; box-sizing: border-box; }}
             .dropdown-check-list .anchor:hover {{ border-color: var(--text-muted); }}
+            .dropdown-check-list .anchor::after {{
+                content: "";
+                width: 16px;
+                height: 16px;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+                background-size: contain;
+                background-repeat: no-repeat;
+                background-position: center;
+                transition: transform 0.2s ease;
+            }}
+            .dropdown-check-list.visible .anchor::after {{
+                transform: rotate(180deg);
+            }}
             .dropdown-check-list .items {{ display: none; position: absolute; top: 100%; left: 0; background: white; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: var(--shadow-lg); width: 100%; z-index: 100; max-height: 300px; overflow-y: auto; padding: 0.5rem; margin-top: 0.5rem; list-style: none; box-sizing: border-box; }}
             .dropdown-check-list.visible .items {{ display: block; animation: slideDown 0.2s ease-out; }}
             .dropdown-check-list ul.items li {{ margin-bottom: 2px; }}
@@ -265,7 +280,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
         <div class="container">
             
             <div class="header-panel">
-                <h1><span class="secret-export" onclick="exportSecretExcel()" title="Скрытый экспорт в Excel">📊</span> Дашборд Ошибок МЭС</h1>
+                <h1><span class="secret-export" onclick="exportSecretExcel()" title="Скрытый экспорт в Excel">📝</span> Ошибки и карты для врачей</h1>
             </div>
             
             <div class="tabs-nav">

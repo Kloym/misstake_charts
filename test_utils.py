@@ -28,15 +28,16 @@ def debug_print(msg):
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ HTML ---
 def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, output_path):
     def clean_dept_name(name):
-        return " ".join(str(name).strip().title().split())
+        if not name or str(name).lower() == 'nan': 
+            return "Неизвестно"
+        return " ".join(str(name).replace('\xa0', ' ').strip().split()).capitalize()
 
     for err in errors_data:
-        err['department'] = clean_dept_name(err.get('department', 'Неизвестно'))
-
+        err['department'] = clean_dept_name(err.get('department'))
+        
     for row in checked_data:
-        if 'Отделение' in row and row['Отделение']:
-            row['Отделение'] = clean_dept_name(row['Отделение'])
-
+        if 'Отделение' in row:
+            row['Отделение'] = clean_dept_name(row.get('Отделение'))
     errors_data = sorted(errors_data, key=lambda x: ("Клинические рекомендации:" in x['message'] or "Экстренная госпитализация:" in x['message']))
     
     unique_depts_err = sorted(list(set([err['department'] for err in errors_data])))
@@ -44,15 +45,13 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
     for d in unique_depts_err:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_err += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-err" checked onchange="filterErrTable()"> {d}</label></li>\n'
-    # --- Подготовка для второй вкладки ---
-    # 1. Отделения
+
     unique_depts_chk = sorted(list(set([str(row.get('Отделение', '')) for row in checked_data if str(row.get('Отделение', ''))])))
     dept_checkboxes_chk = ""
     for d in unique_depts_chk:
         safe_val = d.replace('"', '&quot;')
         dept_checkboxes_chk += f'<li><label><input type="checkbox" value="{safe_val}" class="dept-cb-chk" checked onchange="filterChkTable()"> {d}</label></li>\n'
         
-    # 2. Даты выбытия
     raw_dates = list(set([str(row.get('Дата выбытия', '')) for row in checked_data if str(row.get('Дата выбытия', ''))]))
     
     def date_sort_key(d):
@@ -77,16 +76,15 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Отчет: Ошибки и Проверки</title>
         <style>
             body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 30px 20px; }}
             .container {{ max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
             
-            /* Секретный заголовок для Excel */
             h1 {{ margin: 0 0 20px 0; font-size: 1.5em; color: #2c3e50; }}
             .secret-export {{ cursor: default; user-select: none; }}
             
-            /* ВКЛАДКИ */
             .tabs-nav {{ display: flex; gap: 20px; border-bottom: 2px solid #e0e0e0; margin-bottom: 20px; }}
             .tab-btn {{ background: none; border: none; padding: 10px 15px; font-size: 16px; font-weight: bold; color: #7f8c8d; cursor: pointer; border-bottom: 3px solid transparent; transition: 0.3s; }}
             .tab-btn:hover {{ color: #3498db; }}
@@ -104,7 +102,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             .stat-badge.success {{ background: #eafaf1; color: #27ae60; border: 1px solid #d5f5e3; }}
             .stat-badge span {{ font-size: 16px; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); transition: 0.3s; }}
             
-            /* Стили для кликабельных счетчиков и плашки */
             .clickable-badge {{ cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; user-select: none; }}
             .clickable-badge:hover {{ transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); filter: brightness(0.95); }}
             .clickable-badge.active-filter {{ transform: scale(0.98); box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); }}
@@ -133,7 +130,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             #summaryText {{ flex-grow: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 13px; resize: vertical; min-height: 40px; box-sizing: border-box; }}
             .btn-copy {{ background: #27ae60; color: white; border: none; padding: 0 20px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; white-space: nowrap; }}
             
-            .table-container {{ overflow-x: auto; max-height: 70vh; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; }}
+            .table-container {{ overflow-x: auto; max-height: 70vh; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; -webkit-overflow-scrolling: touch; }}
             table.main-table {{ width: 100%; border-collapse: collapse; background: #fff; min-width: 800px; }}
             .main-table th, .main-table td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; font-size: 14px; }}
             .main-table th {{ background-color: #3498db; color: #ffffff; position: sticky; top: 0; z-index: 50; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
@@ -144,17 +141,47 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             .clickable-mes {{ background: #8e44ad; color: white; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; cursor: pointer; text-decoration: none; transition: 0.2s; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
             .clickable-mes:hover {{ filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.15); }}
             
-            /* Модальное окно */
             .modal {{ display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }}
-            .modal-content {{ background-color: #fff; margin: 5% auto; padding: 25px; border-radius: 8px; width: 95%; max-width: 1400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadein 0.3s; overflow-x: auto; }}
-            .close-btn {{ color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }}
+            .modal-content {{ background-color: #fff; margin: 5% auto; padding: 25px; border-radius: 8px; width: 95%; max-width: 1400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: fadein 0.3s; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+            .close-btn {{ color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; line-height: 1; }}
             .close-btn:hover {{ color: #333; text-decoration: none; }}
-            .rec-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+            .rec-table {{ width: 100%; border-collapse: collapse; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); min-width: 600px; }}
             .rec-table th, .rec-table td {{ border: 1px solid #e0e0e0; padding: 12px; font-size: 13px; line-height: 1.5; }}
             .rec-table th {{ background-color: #f8f9f9; }}
             
             .limit-warning {{ text-align: center; color: #7f8c8d; padding: 15px; font-size: 13px; font-style: italic; background: #fdfdfd; }}
+            
             @keyframes fadein {{ from {{ opacity: 0; transform: translateY(-10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+
+            /* Стили для мобильных телефонов (ширина экрана 768px и меньше) */
+            @media (max-width: 768px) {{
+                body {{ padding: 10px 5px; }}
+                .container {{ padding: 15px; }}
+                h1 {{ font-size: 1.3em; margin-bottom: 15px; }}
+                
+                .tabs-nav {{ flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }}
+                .tab-btn {{ flex: 1 1 100%; text-align: center; padding: 12px; border-bottom: 2px solid transparent; background: #f8f9f9; border-radius: 4px; }}
+                .tab-btn.active {{ background: #eaf2f8; border-bottom: 2px solid #3498db; }}
+                
+                .stats-container {{ flex-direction: column; align-items: stretch; gap: 10px; }}
+                .stat-badge {{ justify-content: space-between; padding: 12px; font-size: 15px; }}
+                
+                .filters-grid {{ flex-direction: column; align-items: stretch; gap: 12px; }}
+                .filter-group {{ flex: 1 1 100%; width: 100%; }}
+                
+                /* Увеличиваем элементы управления для удобного нажатия пальцем */
+                .dropdown-check-list .anchor {{ padding: 12px; font-size: 15px; }}
+                input[type="text"] {{ padding: 12px; font-size: 15px; }}
+                
+                .export-controls {{ flex-direction: column; min-width: 100%; }}
+                .btn-copy {{ padding: 15px; font-size: 16px; width: 100%; }}
+                #summaryText {{ min-height: 60px; }}
+                
+                .modal-content {{ margin: 10% auto; padding: 15px; width: 100%; box-sizing: border-box; }}
+                .close-btn {{ padding: 10px; margin: -10px -10px 0 0; }}
+                
+                .main-table th, .main-table td {{ padding: 10px 8px; font-size: 13px; }}
+            }}
         </style>
     </head>
     <body>
@@ -224,7 +251,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             ib_text = "Неизвестно"
             error_text = err_msg
             
-        # Считаем "Рекомендацией" и Клинические рекомендации, и Экстренную госпитализацию
         row_type = "rec" if ("Клинические рекомендации:" in error_text or "Экстренная госпитализация:" in error_text) else "err"
         
         error_text = error_text.replace("[СКП]", "<span style='padding:2px 6px; border-radius:3px; font-size:0.85em; font-weight:bold; background-color:#f39c12; color:white;'>СКП</span>")
@@ -303,9 +329,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                         <tbody id="checkedTbody">
                         </tbody>
                     </table>
-                    <div id="limitWarning" class="limit-warning hidden-row" style="color: #d32f2f; background-color: #fdeaea; font-weight: bold; padding: 12px; border: 1px solid #f5c2c7; border-radius: 6px; text-align: center; margin-top: 15px;">
-                        ⚠️ Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.
-                    </div>
+                    <div id="limitWarning" class="limit-warning hidden-row">Показаны первые 500 записей для быстрой работы. Уточните поиск, чтобы найти остальные.</div>
+                </div>
             </div>
         </div>
 
@@ -548,7 +573,6 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                 }}
             }}
             
-            // НОВОЕ: Открытие модалки для экстренной госпитализации
             function openEmergModal(key) {{
                 const dataList = emergData[key];
                 if(dataList && dataList.length > 0) {{
@@ -560,24 +584,21 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                     
                     const table = document.createElement('table'); 
                     table.className = 'rec-table';
-                    // Добавляем заголовки для всех 6 столбцов твоего Excel
-                    table.innerHTML = `<thead><tr>
-                        <th>№ п/п</th><th>Код услуги</th><th>Название услуги</th>
-                        <th>Код МКБ-10</th><th>Критерии экстренной госпитализации</th><th>Профиль</th>
-                    </tr></thead>`;
+                    table.innerHTML = '<thead><tr>' +
+                        '<th>№ п/п</th><th>Код услуги</th><th>Название услуги</th>' +
+                        '<th>Код МКБ-10</th><th>Критерии экстренной госпитализации</th><th>Профиль</th>' +
+                        '</tr></thead>';
+                    
                     const tbody = document.createElement('tbody');
                     
                     dataList.forEach(row => {{
                         let tr = document.createElement('tr');
-                        // Вставляем значения из всех колонок, которые ты сохранял в словарь
-                        tr.innerHTML = `
-                            <td>${{row['№ п/п'] || ''}}</td>
-                            <td>${{row['Код услуги'] || ''}}</td>
-                            <td>${{row['Наименование услуги'] || ''}}</td>
-                            <td>${{row['Код по МКБ-10'] || ''}}</td>
-                            <td style="font-size: 14px; color: #2c3e50;">${{(row['Критерии'] || '').toString().replace(/\\n/g, '<br>')}}</td>
-                            <td>${{row['Профиль'] || ''}}</td>
-                        `;
+                        tr.innerHTML = '<td>' + (row['№ п/п'] || '') + '</td>' +
+                                       '<td>' + (row['Код услуги'] || '') + '</td>' +
+                                       '<td>' + (row['Наименование услуги'] || '') + '</td>' +
+                                       '<td>' + (row['Код по МКБ-10'] || '') + '</td>' +
+                                       '<td style="font-size: 14px; color: #2c3e50;">' + (row['Критерии'] || '').toString().replace(/\\n/g, '<br>') + '</td>' +
+                                       '<td>' + (row['Профиль'] || '') + '</td>';
                         tbody.appendChild(tr);
                     }});
                     
