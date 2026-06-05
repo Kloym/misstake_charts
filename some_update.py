@@ -926,7 +926,7 @@ def main():
 
         if all_errors or checked_data:
             current_time = datetime.now().strftime("%d.%m.%Y_%H-%M")
-            report_name = f"report_{current_time}.html"
+            report_name = f"🔥_ОШИБКИ_И_КАРТЫ_{current_time}🔥.html"
             generate_html_report(all_errors, recs_dict, checked_data, emerg_dict, output_path=os.path.join(INPUT_DIR, report_name))
 
         end_time = time.time()
