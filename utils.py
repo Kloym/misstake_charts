@@ -475,16 +475,30 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             }});
 
             function toggleAllDepts(cbClass, sourceCheckbox, listId) {{
-                document.querySelectorAll('.' + cbClass).forEach(cb => cb.checked = sourceCheckbox.checked);
+                const allCheckboxes = document.querySelectorAll('.' + cbClass);
+                allCheckboxes.forEach(cb => {{
+                    const li = cb.closest('li');
+                    // НОВОЕ: Меняем галочки только у видимых отделений
+                    if (!li || li.style.display !== 'none') {{
+                        cb.checked = sourceCheckbox.checked;
+                    }}
+                }});
                 updateDropdownLabel(cbClass, listId);
             }}
 
             function initCheckboxes(cbClass, selectAllId, listId, filterFunc) {{
                 document.querySelectorAll('.' + cbClass).forEach(cb => {{
                     cb.addEventListener('change', function() {{
-                        const total = document.querySelectorAll('.' + cbClass).length;
-                        const checked = document.querySelectorAll('.' + cbClass + ':checked').length;
-                        document.getElementById(selectAllId).checked = (total === checked);
+                        const allCheckboxes = Array.from(document.querySelectorAll('.' + cbClass));
+                        // НОВОЕ: Считаем только видимые отделения
+                        const visibleCheckboxes = allCheckboxes.filter(c => {{
+                            const li = c.closest('li');
+                            return !li || li.style.display !== 'none';
+                        }});
+                        const total = visibleCheckboxes.length;
+                        const checked = visibleCheckboxes.filter(c => c.checked).length;
+                        
+                        document.getElementById(selectAllId).checked = (total > 0 && total === checked);
                         updateDropdownLabel(cbClass, listId);
                         filterFunc();
                     }});
@@ -492,18 +506,48 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             }}
 
             function updateDropdownLabel(cbClass, listId) {{
-                const total = document.querySelectorAll('.' + cbClass).length;
-                const checked = document.querySelectorAll('.' + cbClass + ':checked').length;
+                const allCheckboxes = Array.from(document.querySelectorAll('.' + cbClass));
+                const visibleCheckboxes = allCheckboxes.filter(c => {{
+                    const li = c.closest('li');
+                    return !li || li.style.display !== 'none';
+                }});
+                
+                const total = visibleCheckboxes.length;
+                const checked = visibleCheckboxes.filter(c => c.checked).length;
                 const anchor = document.getElementById(listId).querySelector('.anchor');
                 
-                if (checked === total) anchor.innerText = "Выбрано всё";
+                if (total === 0) anchor.innerText = "Нет доступных";
+                else if (checked === total) anchor.innerText = "Выбрано всё";
                 else if (checked === 0) anchor.innerText = "Ничего не выбрано";
                 else anchor.innerText = `Выбрано: ${{checked}}`;
             }}
 
-            initCheckboxes('dept-cb-err', 'selectAllDeptsErr', 'deptCheckListErr', filterErrTable);
-            initCheckboxes('dept-cb-chk', 'selectAllDeptsChk', 'deptCheckListChk', filterChkTable);
-            initCheckboxes('date-cb-chk', 'selectAllDatesChk', 'dateCheckListChk', filterChkTable);
+            // НОВАЯ ФУНКЦИЯ: Скрывает пустые отделения в выпадающем списке
+            function updateDeptDropdownVisibility() {{
+                const rows = document.getElementsByClassName("err-data-row");
+                const availableDepts = new Set();
+
+                for (let i = 0; i < rows.length; i++) {{
+                    const type = rows[i].getAttribute("data-type");
+                    const dept = rows[i].getAttribute("data-dept");
+                    
+                    if (currentTypeFilter === 'all' || type === currentTypeFilter) {{
+                        availableDepts.add(dept);
+                    }}
+                }}
+
+                const checkboxes = document.querySelectorAll('.dept-cb-err');
+                checkboxes.forEach(cb => {{
+                    const li = cb.closest('li');
+                    if (availableDepts.has(cb.value)) {{
+                        li.style.display = ''; // Показываем
+                    }} else {{
+                        li.style.display = 'none'; // Скрываем
+                    }}
+                }});
+
+                updateDropdownLabel('dept-cb-err', 'deptCheckListErr');
+            }}
 
             let currentTypeFilter = 'all';
 
@@ -530,6 +574,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                         alertBox.className = 'filter-alert rec-mode';
                     }}
                 }}
+
+                updateDeptDropdownVisibility();
                 filterErrTable();
             }}
 
@@ -782,6 +828,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             }}
 
             window.onload = function() {{ 
+                updateDeptDropdownVisibility();
                 filterErrTable(); 
                 filterChkTable(); 
             }};
