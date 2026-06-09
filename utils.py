@@ -104,6 +104,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             
             /* Секретная кнопка экспорта */
             .secret-export {{ cursor: default; user-select: none; }}
+            .info-icon {{ cursor: pointer; color: var(--text-muted); display: flex; align-items: center; transition: 0.2s; margin-left: 5px; }}
+            .info-icon:hover {{ color: var(--primary); transform: scale(1.1); }}
             
             /* ВКЛАДКИ */
             .tabs-nav {{ display: flex; gap: 10px; margin-bottom: 0.5rem; }}
@@ -191,6 +193,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             .main-table tbody tr {{ transition: background 0.2s; }}
             .main-table tbody tr:hover {{ background-color: #f8fafc; }}
             .fixed-row td {{ text-decoration: line-through; opacity: 0.4; background-color: #f9fafb; }}
+            
             .hidden-row {{ display: none !important; }}
 
             .hint-details {{ margin-top: 12px; }}
@@ -280,7 +283,12 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
         <div class="container">
             
             <div class="header-panel">
-                <h1><span class="secret-export" onclick="exportSecretExcel()" title="Скрытый экспорт в Excel">📝</span> Ошибки и карты для врачей</h1>
+                <h1>
+                    <span class="secret-export" onclick="exportSecretExcel()" title="Скрытый экспорт в Excel">📝</span> Ошибки и карты для врачей
+                    <span class="info-icon" onclick="openInfoModal()" title="Справочник по работе системы">
+                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </span>
+                </h1>
             </div>
             
             <div class="tabs-nav">
@@ -687,9 +695,24 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             function toggleFix(index, ibNumber, deptName) {{
                 const row = document.getElementById('row_' + index);
                 const checkbox = document.getElementById('check_' + index);
+                const type = row.getAttribute('data-type'); // Получаем тип: 'err' или 'rec'
+
+                // Если это рекомендация и пользователь пытается поставить галочку
+                if (type === 'rec' && checkbox.checked) {{
+                    alert("УВЕДОМЛЕНИЕ\n\nДанный пункт является справочной рекомендацией, а не ошибкой. \n\nВам необходимо самостоятельно проверить корректность и полноту оформления медицинской документации пациента согласно указанным требованиям.\n\nНаправлять данный номер ИБ операторам для исправления не требуется.");
+                    checkbox.checked = false; // Сбрасываем галочку обратно
+                    return; // Прерываем выполнение функции
+                }}
+
+                // Стандартная логика для настоящих ошибок
                 const textLine = ibNumber + " (" + deptName + ")";
-                if (checkbox.checked) {{ row.classList.add('fixed-row'); fixedIBs.set(index, textLine); }} 
-                else {{ row.classList.remove('fixed-row'); fixedIBs.delete(index); }}
+                if (checkbox.checked) {{ 
+                    row.classList.add('fixed-row'); 
+                    fixedIBs.set(index, textLine); 
+                }} else {{ 
+                    row.classList.remove('fixed-row'); 
+                    fixedIBs.delete(index); 
+                }}
                 updateSummary();
             }}
             
@@ -781,6 +804,30 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                     modalBody.appendChild(table); 
                     modal.style.display = "block";
                 }}
+            }}
+            function openInfoModal() {{
+                document.getElementById("modalTitle").innerText = "Справочная информация: Ошибки и Рекомендации";
+                const modalBody = document.getElementById("modalBody");
+                
+                modalBody.innerHTML = `
+                    <div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); padding-right: 10px;">
+                        <h3 style="color: #b91c1c; display: flex; align-items: center; gap: 10px; margin-top: 0;">
+                            <span style="background: #fef2f2; padding: 4px 10px; border-radius: 6px; border: 1px solid #fca5a5;">🔴 Ошибки</span>
+                        </h3>
+                        <p style="margin-bottom: 20px;"><b>Ошибки</b> — это критические нарушения в формировании случая лечения. К ним относятся: несоответствие кода МЭС диагнозу по МКБ-10, отсутствие обязательной хирургической операции, неверно указанный тип анестезии или нарушение правил перевода между отделениями и т.д.</p>
+                        <p style="margin-bottom: 25px;">Такие случаи <b>строго подлежат исправлению</b>. Лечащему врачу необходимо внести соответствующие корректировки в медицинскую информационную систему для успешной подачи реестров на оплату.</p>
+                        
+                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 25px 0;">
+                        
+                        <h3 style="color: #6d28d9; display: flex; align-items: center; gap: 10px;">
+                            <span style="background: #faf5ff; padding: 4px 10px; border-radius: 6px; border: 1px solid #d8b4fe;">🟣 Рекомендации</span>
+                        </h3>
+                        <p style="margin-bottom: 20px;"><b>Рекомендации</b> (клинические критерии и критерии экстренной госпитализации) — это информационные уведомления. Они указывают на то, что для выбранного кода МЭС и диагноза существуют строгие критерии оценки качества медицинской помощи.</p>
+                        <p style="margin-bottom: 0;">Данные уведомления <b>не являются ошибкой</b>. Они призывают лечащего врача убедиться, что в текстовой части истории болезни (дневники, выписной эпикриз, результаты анализов) подробно описаны все показания и обоснования. Направлять такие случаи операторам для изменения кодов <b>не требуется</b>.</p>
+                    </div>
+                `;
+                
+                modal.style.display = "block";
             }}
 
             function closeModal() {{ modal.style.display = "none"; }}
