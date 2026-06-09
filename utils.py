@@ -104,8 +104,27 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             
             /* Секретная кнопка экспорта */
             .secret-export {{ cursor: default; user-select: none; }}
-            .info-icon {{ cursor: pointer; color: var(--text-muted); display: flex; align-items: center; transition: 0.2s; margin-left: 5px; }}
-            .info-icon:hover {{ color: var(--primary); transform: scale(1.1); }}
+            .info-badge {{ 
+                cursor: pointer; 
+                color: var(--primary); 
+                background: #e0e7ff; 
+                padding: 6px 14px; 
+                border-radius: 20px; 
+                display: inline-flex; 
+                align-items: center; 
+                gap: 6px; 
+                transition: all 0.2s ease; 
+                margin-left: 15px; 
+                font-size: 0.85rem; 
+                font-weight: 600; 
+                border: 1px solid #c7d2fe;
+            }}
+            .info-badge:hover {{ 
+                background: #c7d2fe; 
+                transform: translateY(-2px); 
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+            }}
+            .info-badge svg {{ width: 18px; height: 18px; }}
             
             /* ВКЛАДКИ */
             .tabs-nav {{ display: flex; gap: 10px; margin-bottom: 0.5rem; }}
@@ -287,9 +306,11 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             
             <div class="header-panel">
                 <h1>
-                    <span class="secret-export" onclick="exportSecretExcel()" title="Скрытый экспорт в Excel">📝</span> Ошибки и карты для врачей
-                    <span class="info-icon" onclick="openInfoModal()" title="Справочник по работе системы">
-                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span class="secret-export" onclick="exportSecretExcel()" title="Скрытый экспорт в Excel">📝</span> 
+                    Ошибки и карты для врачей
+                    <span class="info-badge" onclick="openInfoModal()" title="Справочник по работе системы">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Как работать с файлом?
                     </span>
                 </h1>
             </div>
