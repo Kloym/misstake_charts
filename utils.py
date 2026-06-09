@@ -251,7 +251,10 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
             .close-btn {{ position: absolute; right: 1.5rem; top: 1.5rem; background: var(--bg-color); border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; color: var(--text-muted); display: flex; align-items: center; justify-content: center; transition: 0.2s; }}
             .close-btn:hover {{ background: #e5e7eb; color: var(--text-main); }}
             .modal-header {{ margin-top: 0; color: var(--text-main); padding-right: 2rem; border-bottom: 2px solid var(--bg-color); padding-bottom: 1rem; margin-bottom: 1.5rem; }}
-            
+            .modal-footer {{ margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; }}
+            .btn-close-bottom {{ background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.95rem; }}
+            .btn-close-bottom:hover {{ background: #e5e7eb; border-color: #9ca3af; }}
+
             .rec-table {{ width: 100%; border-collapse: collapse; }}
             .rec-table th, .rec-table td {{ border: 1px solid var(--border-color); padding: 0.75rem; font-size: 0.85rem; }}
             .rec-table th {{ background: var(--bg-color); font-weight: 600; color: var(--text-main); }}
@@ -455,6 +458,9 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                 <button class="close-btn" onclick="closeModal()">&times;</button>
                 <h2 class="modal-header" id="modalTitle">Справочная информация</h2>
                 <div id="modalBody"></div>
+                <div class="modal-footer">
+                    <button class="btn-close-bottom" onclick="closeModal()">Закрыть</button>
+                </div>
             </div>
         </div>
 
@@ -847,11 +853,11 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                         <p style="margin-bottom: 15px; color: #991b1b; background: #fef2f2; padding: 10px 12px; border-radius: 6px; border: 1px solid #fca5a5;">
                             <b>⚠️ ВАЖНО: Подписывать можно только те карты, которые успешно прошли проверку и присутствуют в списке на вкладке «Проверенные»!</b>
                         </p>                        
-                        <p style="margin-bottom: 10px;">Для обеспечения быстрой работы без зависаний браузера <b>одновременно отображается не более 500 записей</b>.</p>                        
-                        <p style="margin-bottom: 10px;"><b>Как найти нужную карту:</b> Обязательно используйте фильтры! Выберите конкретное <i>отделение</i> или введите <i>Номер ИБ / ФИО врача</i>. Система автоматически отсортирует базу и покажет самые новые выписки (последние даты) на самом верху списка.</p>                        
+                        <p style="margin-bottom: 10px;">Для обеспечения быстрой работы без зависаний браузера <b>одновременно отображается не более 500 записей</b>.</p>
                         <p style="margin-bottom: 0; background: #f0fdf4; color: #166534; padding: 10px 12px; border-radius: 6px; border: 1px solid #bbf7d0;">
                             <b>💡 Правильная работа с выпадающим списком:</b> По умолчанию в фильтре выбраны все отделения сразу. Чтобы быстро найти своё, сначала нажмите на главную галочку <b>(Выбрать все)</b> — это очистит весь список. После этого просто отметьте нужное вам отделение.
-                        </p>
+                        </p>                       
+                        <p style="margin-bottom: 10px;"><b>Как найти нужную карту:</b> Обязательно используйте фильтры! Выберите конкретное <i>отделение</i> или введите <i>Номер ИБ / ФИО врача</i>. Система автоматически отсортирует базу и покажет самые новые выписки (последние даты) на самом верху списка.</p>                        
                     </div>
 
                 `;
@@ -861,6 +867,11 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
 
             function closeModal() {{ modal.style.display = "none"; }}
             window.onclick = function(event) {{ if (event.target == modal) closeModal(); }}
+            window.addEventListener('keydown', function(event) {{
+                if (event.key === 'Escape' || event.key === 'Esc') {{
+                    closeModal();
+                }}
+            }});
             
             function exportSecretExcel() {{
                 const table = document.getElementById("errorsTable");
