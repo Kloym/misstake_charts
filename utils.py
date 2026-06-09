@@ -653,6 +653,16 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                     return checkedDepts.has(dept) && checkedDates.has(date) && mk.includes(ibSearch) && emp.includes(docSearch);
                 }});
 
+                filteredData.sort((a, b) => {{
+                    const parseDate = (dStr) => {{
+                        if (!dStr || dStr === 'Нет даты') return 0;
+                        const parts = dStr.split('.');
+                        if (parts.length === 3) return new Date(`${{parts[2]}}-${{parts[1]}}-${{parts[0]}}`).getTime();
+                        return 0;
+                    }};
+                    return parseDate(b['Дата выбытия']) - parseDate(a['Дата выбытия']);
+                }});
+
                 const renderLimit = 500;
                 const dataToRender = filteredData.slice(0, renderLimit);
                 
@@ -806,25 +816,44 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                 }}
             }}
             function openInfoModal() {{
-                document.getElementById("modalTitle").innerText = "Справочная информация: Ошибки и Рекомендации";
+                document.getElementById("modalTitle").innerText = "Руководство пользователя: Дашборд Ошибок МЭС";
                 const modalBody = document.getElementById("modalBody");
                 
                 modalBody.innerHTML = `
                     <div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); padding-right: 10px;">
-                        <h3 style="color: #b91c1c; display: flex; align-items: center; gap: 10px; margin-top: 0;">
+                        
+                        <h3 style="color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px;">1. Разница между Ошибками и Рекомендациями</h3>
+                        
+                        <h4 style="color: #b91c1c; display: flex; align-items: center; gap: 10px; margin-top: 15px;">
                             <span style="background: #fef2f2; padding: 4px 10px; border-radius: 6px; border: 1px solid #fca5a5;">🔴 Ошибки</span>
-                        </h3>
-                        <p style="margin-bottom: 20px;"><b>Ошибки</b> — это критические нарушения в формировании случая лечения. К ним относятся: несоответствие кода МЭС диагнозу по МКБ-10, отсутствие обязательной хирургической операции, неверно указанный тип анестезии или нарушение правил перевода между отделениями и т.д.</p>
+                        </h4>
+                        <p style="margin-bottom: 15px;"><b>Ошибки</b> — это критические нарушения в формировании случая лечения. К ним относятся: несоответствие кода МЭС диагнозу по МКБ-10, отсутствие обязательной хирургической операции, неверно указанный тип анестезии или нарушение правил перевода между отделениями и т.д.<br>
                         <p style="margin-bottom: 25px;">Такие случаи <b>строго подлежат исправлению</b>. Лечащему врачу необходимо внести соответствующие корректировки в медицинскую информационную систему для успешной подачи реестров на оплату.</p>
-                        
-                        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 25px 0;">
-                        
-                        <h3 style="color: #6d28d9; display: flex; align-items: center; gap: 10px;">
+
+                        <h4 style="color: #6d28d9; display: flex; align-items: center; gap: 10px;">
                             <span style="background: #faf5ff; padding: 4px 10px; border-radius: 6px; border: 1px solid #d8b4fe;">🟣 Рекомендации</span>
-                        </h3>
+                        </h4>
                         <p style="margin-bottom: 20px;"><b>Рекомендации</b> (клинические критерии и критерии экстренной госпитализации) — это информационные уведомления. Они указывают на то, что для выбранного кода МЭС и диагноза существуют строгие критерии оценки качества медицинской помощи.</p>
                         <p style="margin-bottom: 0;">Данные уведомления <b>не являются ошибкой</b>. Они призывают лечащего врача убедиться, что в текстовой части истории болезни (дневники, выписной эпикриз, результаты анализов) подробно описаны все показания и обоснования. Направлять такие случаи операторам для изменения кодов <b>не требуется</b>.</p>
+
+                        <h3 style="color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; margin-top: 25px;">2. Интерактивные элементы</h3>
+                        <ul style="padding-left: 20px; margin-bottom: 20px;">
+                            <li style="margin-bottom: 10px;"><b>Кликабельные коды МЭС:</b> Если вы видите в тексте рекомендаций яркую цветную кнопку с кодом МЭС (например, <span style="background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-family: monospace;">72030</span>) — смело нажимайте на нее! Откроется подробный справочник с правилами и требованиями для этого кода.</li>
+                            <li style="margin-bottom: 10px;"><b>Сбор отчета для операторов:</b> Отмечайте чекбоксы слева (✓) у тех ошибок, которые вы обработали. Система автоматически соберет номера ИБ в удобный список в текстовом поле выше. Нажмите <b>«Скопировать текст»</b> и отправьте его операторам в чат.</li>
+                            <li><b>Быстрые фильтры:</b> Кликните на яркую плашку <span style="background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; border: 1px solid #fca5a5; font-weight: bold;">Ошибок: 15</span> в верхней статистике, чтобы моментально скрыть все рекомендации и оставить на экране только строгие ошибки (нажмите еще раз для сброса).</li>
+                        </ul>
+
+                        <h3 style="color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; margin-top: 25px;">3. Проверенные карты</h3>
+                        <p style="margin-bottom: 15px; color: #991b1b; background: #fef2f2; padding: 10px 12px; border-radius: 6px; border: 1px solid #fca5a5;">
+                            <b>⚠️ ВАЖНО: Подписывать можно только те карты, которые успешно прошли проверку и присутствуют в списке на вкладке «Проверенные»!</b>
+                        </p>                        
+                        <p style="margin-bottom: 10px;">Для обеспечения быстрой работы без зависаний браузера <b>одновременно отображается не более 500 записей</b>.</p>                        
+                        <p style="margin-bottom: 10px;"><b>Как найти нужную карту:</b> Обязательно используйте фильтры! Выберите конкретное <i>отделение</i> или введите <i>Номер ИБ / ФИО врача</i>. Система автоматически отсортирует базу и покажет самые новые выписки (последние даты) на самом верху списка.</p>                        
+                        <p style="margin-bottom: 0; background: #f0fdf4; color: #166534; padding: 10px 12px; border-radius: 6px; border: 1px solid #bbf7d0;">
+                            <b>💡 Правильная работа с выпадающим списком:</b> По умолчанию в фильтре выбраны все отделения сразу. Чтобы быстро найти своё, сначала нажмите на главную галочку <b>(Выбрать все)</b> — это очистит весь список. После этого просто отметьте нужное вам отделение.
+                        </p>
                     </div>
+
                 `;
                 
                 modal.style.display = "block";
