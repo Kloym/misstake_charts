@@ -816,7 +816,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                 }}
             }}
             function openInfoModal() {{
-                document.getElementById("modalTitle").innerText = "Руководство пользователя: Дашборд Ошибок МЭС";
+                document.getElementById("modalTitle").innerText = "Руководство пользователя: Ошибок и Карт";
                 const modalBody = document.getElementById("modalBody");
                 
                 modalBody.innerHTML = `
@@ -827,7 +827,7 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
                         <h4 style="color: #b91c1c; display: flex; align-items: center; gap: 10px; margin-top: 15px;">
                             <span style="background: #fef2f2; padding: 4px 10px; border-radius: 6px; border: 1px solid #fca5a5;">🔴 Ошибки</span>
                         </h4>
-                        <p style="margin-bottom: 15px;"><b>Ошибки</b> — это критические нарушения в формировании случая лечения. К ним относятся: несоответствие кода МЭС диагнозу по МКБ-10, отсутствие обязательной хирургической операции, неверно указанный тип анестезии или нарушение правил перевода между отделениями и т.д.<br>
+                        <p style="margin-bottom: 15px;"><b>Ошибки</b> — это критические нарушения в формировании случая лечения. К ним относятся: несоответствие кода МЭС диагнозу по МКБ-10, отсутствие обязательной хирургической операции, неверно указанный тип анестезии или нарушение правил перевода между отделениями(Код прерывания) и т.д.<br>
                         <p style="margin-bottom: 25px;">Такие случаи <b>строго подлежат исправлению</b>. Лечащему врачу необходимо внести соответствующие корректировки в медицинскую информационную систему для успешной подачи реестров на оплату.</p>
 
                         <h4 style="color: #6d28d9; display: flex; align-items: center; gap: 10px;">
@@ -838,8 +838,8 @@ def generate_html_report(errors_data, recs_dict, checked_data, emerg_dict, outpu
 
                         <h3 style="color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; margin-top: 25px;">2. Интерактивные элементы</h3>
                         <ul style="padding-left: 20px; margin-bottom: 20px;">
-                            <li style="margin-bottom: 10px;"><b>Кликабельные коды МЭС:</b> Если вы видите в тексте рекомендаций яркую цветную кнопку с кодом МЭС (например, <span style="background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-family: monospace;">72030</span>) — смело нажимайте на нее! Откроется подробный справочник с правилами и требованиями для этого кода.</li>
-                            <li style="margin-bottom: 10px;"><b>Сбор отчета для операторов:</b> Отмечайте чекбоксы слева (✓) у тех ошибок, которые вы обработали. Система автоматически соберет номера ИБ в удобный список в текстовом поле выше. Нажмите <b>«Скопировать текст»</b> и отправьте его операторам в чат.</li>
+                            <li style="margin-bottom: 10px;"><b>Коды МЭС, которые можно нажать:</b> Если вы видите в тексте рекомендаций яркую цветную кнопку с кодом МЭС (например, <span style="background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-family: monospace;">72030</span>) — смело нажимайте на нее! Откроется подробный справочник с правилами и требованиями для этого кода.</li>
+                            <li style="margin-bottom: 10px;"><b>Сбор отчета для операторов:</b> Отмечайте квадратики слева (✓) у тех ошибок, которые вы обработали. Система автоматически соберет номера ИБ в удобный список в текстовом поле выше. Нажмите <b>«Скопировать текст»</b> и отправьте его операторам в чат.</li>
                             <li><b>Быстрые фильтры:</b> Кликните на яркую плашку <span style="background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; border: 1px solid #fca5a5; font-weight: bold;">Ошибок: 15</span> в верхней статистике, чтобы моментально скрыть все рекомендации и оставить на экране только строгие ошибки (нажмите еще раз для сброса).</li>
                         </ul>
 
