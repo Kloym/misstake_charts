@@ -763,10 +763,29 @@ def main():
             
             df_merged = df_merged[~df_merged['Тип оплаты'].astype(str).str.upper().str.strip().isin(excluded_types)]
 
+        EXCLUDE_FILE = 'exclude_ibs.txt'
+        ignored_ibs = set()
+        
+        if os.path.exists(EXCLUDE_FILE):
+            with open(EXCLUDE_FILE, 'r', encoding='utf-8') as f:
+                ignored_ibs = {line.strip() for line in f if line.strip() and not line.strip().startswith('#')}
+            print(f"ℹ️ Загружен список исключений: {len(ignored_ibs)} ИБ будут автоматически пропущены.")
+        else:
+            with open(EXCLUDE_FILE, 'w', encoding='utf-8') as f:
+                f.write("# Вписывайте сюда номера ИБ (каждый номер строго с новой строки),\n")
+                f.write("# которые невозможно исправить, чтобы скрипт их не проверял.\n")
+            print(f"ℹ️ Создан пустой файл исключений '{EXCLUDE_FILE}'.")
         grouped = df_merged.groupby('ИБ_clean')
         print(f"Обнаружено пациентов (ИБ): {len(grouped)}. Начинаю проверку...")
 
         for ib, group in grouped:
+            ib_str = re.sub(r'-\d{4}', '', str(ib)).strip()
+            cleaned_ignored = {re.sub(r'-\d{4}', '', x).strip() for x in ignored_ibs}
+            
+            if ib_str in cleaned_ignored:
+                print(f"ℹ️ История болезни {ib} автоматически пропущена (в списке исключений)")
+                continue
+                
             debug_print(f"--- Обработка ИБ: {ib} ---")
 
             dept_errors = _check_department_rules(group, ib)
