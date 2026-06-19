@@ -278,7 +278,7 @@ def _check_department_rules(group, ib_num):
         row_doc = _get_doc(row)
         dept_lower = row_dept.lower()
 
-        is_diag_or_np = 'коечное отделение нп' in dept_lower or 'диагностическ' in dept_lower
+        is_diag_or_np = any(kw in dept_lower for kw in ['коечное отделение нп', 'диагностическ', 'отделение неотложной помощи'])
         is_mes_84_95 = mes_code.startswith(('95', '095', '84', '084'))
 
         if is_mes_84_95 and not is_diag_or_np:
