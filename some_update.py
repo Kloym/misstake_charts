@@ -3,7 +3,7 @@ import numpy as np
 import time
 import os
 import glob
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import traceback
 from utils import ANESTHESIA_DICT, DIFFICULT_DEPARTMENTS, debug_print, generate_html_report
@@ -777,6 +777,7 @@ def main():
             print(f"ℹ️ Создан пустой файл исключений '{EXCLUDE_FILE}'.")
         grouped = df_merged.groupby('ИБ_clean')
         print(f"Обнаружено пациентов (ИБ): {len(grouped)}. Начинаю проверку...")
+        dead_patients_dict = {}
 
         for ib, group in grouped:
             ib_str = re.sub(r'-\d{4}', '', str(ib)).strip()
@@ -801,6 +802,37 @@ def main():
                 continue 
                 
             temp_errors = []
+
+            is_dead = False
+            if 'Умер' in group.columns:
+                is_dead = str(group['Умер'].iloc[0]).strip().lower() == 'да'
+            
+            if is_dead:
+                last_mov = group.iloc[-1]
+                prer_code = str(last_mov.get('Код прерывания госпитализации', '')).split('.')[0].strip()
+                
+                if prer_code != '5':
+                    last_dept = str(last_mov.get('Отделение', 'Неизвестно')).strip()
+                    doc = _get_doc(last_mov)
+                    temp_errors.append(f"META::{last_dept}::{doc}::ИБ {ib}: Ошибка прерывания: Пациент числится как умерший, но в последнем движении код прерывания указан '<b>{prer_code}</b>' вместо '<b>5</b>'.")
+                date_val = last_mov.get('Дата выбытия_mov', last_mov.get('Дата выбытия_disch', last_mov.get('Дата выбытия', '')))
+                date_str = str(date_val).strip()
+                
+                try:
+                    clean_date_str = date_str.split(' ')[0]
+                    if '.' in clean_date_str:
+                        discharge_date = datetime.strptime(clean_date_str, '%d.%m.%Y').date()
+                    elif '-' in clean_date_str:
+                        discharge_date = datetime.strptime(clean_date_str, '%Y-%m-%d').date()
+                    else:
+                        discharge_date = None
+                        
+                    if discharge_date:
+                        ib_base = ib_str.split('-')[0].strip()
+                        dead_patients_dict[ib_base] = discharge_date
+                        print(f"💀 ИБ {ib_base}: пациент умер, дата выбытия зафиксирована как {discharge_date}")
+                except Exception as e:
+                    print(f"⚠️ Ошибка парсинга даты для умершего {ib_str}: {e}")
             
             has_rean_dept = group['Отделение'].astype(str).str.lower().str.contains('реанимац', na=False).any()
             mes_names = " ".join(group['МЭС. Название'].astype(str).str.lower().unique())
@@ -934,7 +966,23 @@ def main():
                     final_html_cols = ['№ МК', 'Отделение', 'Сотрудник', 'Тип пациента', 'Дата выбытия']
                     html_cols_to_keep = [c for c in final_html_cols if c in df_clean.columns]
 
-                    checked_data = df_clean[html_cols_to_keep].to_dict('records')
+                    # --- ФИЛЬТРАЦИЯ УМЕРШИХ ДЛЯ ПРОВЕРЕННЫХ ---
+                    today_date = datetime.now().date()
+                    valid_checked_records = []
+                    
+                    for record in df_clean[html_cols_to_keep].to_dict('records'):
+                        rec_ib = str(record.get('№ МК', '')).replace('.0', '').strip()
+                        rec_ib_clean = rec_ib.split('-')[0].strip()
+                        if rec_ib_clean in dead_patients_dict:
+                            discharge_date = dead_patients_dict[rec_ib_clean]
+                            if today_date < discharge_date + timedelta(days=3):
+                                print(f"ℹ️ Проверенная ИБ {rec_ib} (Умер) скрыта из отчета. Появится на 4-й день.")
+                                continue
+                                
+                        valid_checked_records.append(record)
+
+                    checked_data = valid_checked_records
+
                     print(f"✅ Успешно загружено проверенных карт (ИД ПУМП > 0): {len(checked_data)}")
                 else:
                     print(f"⚠️ В файле {checked_file_path} не найдены нужные колонки.")
