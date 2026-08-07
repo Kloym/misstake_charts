@@ -9,3 +9,5 @@ sudo docker rm extract_mscrit
 python -m PyInstaller --noconfirm --clean --onefile --hidden-import pandas --hidden-import openpyxl some_update.py
 
 python -m PyInstaller --noconfirm --clean --onefile --hidden-import pandas --hidden-import openpyxl merge_app.py
+
+python -m PyInstaller --noconfirm --clean --onefile --console --name "Mscrit_Diff" --icon="mgfoms.ico" --hidden-import pandas --hidden-import openpyxl --hidden-import xlrd test.py
