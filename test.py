@@ -2,11 +2,16 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, ttk
 import os
+import sys
+import re
+import unicodedata
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. ФУНКЦИИ ДЛЯ РАБОТЫ С ИНТЕРФЕЙСОМ И ФАЙЛАМИ
+# 1. БАЗОВЫЕ ФУНКЦИИ И ИНТЕРФЕЙС
 # ==========================================
 
 root = tk.Tk()
@@ -71,17 +76,204 @@ def load_and_clean_data(filepath, file_label):
     return df
 
 # ==========================================
-# 2. GUI ДЛЯ РАЗРЕШЕНИЯ КОНФЛИКТОВ
+# 2. ФУНКЦИИ ОБОГАЩЕНИЯ НОВОГО MSCRIT
+# ==========================================
+
+def get_program_dir():
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+def normalize_key(value, strip_leading_zeros=False):
+    """
+    Нормализация ключей. 
+    Флаг strip_leading_zeros=True применяем ТОЛЬКО для кодов МЭС/услуг,
+    чтобы не испортить коды операций и диагнозов.
+    """
+    if pd.isna(value):
+        return ""
+    
+    value = unicodedata.normalize("NFKC", str(value))
+    value = (
+        value.replace("\xa0", " ")
+             .replace("\u200b", "")
+             .strip(" \"'")
+             .upper()
+    )
+    
+    if re.fullmatch(r"\d+\.0+", value):
+        value = value.split(".", 1)[0]
+        
+    if strip_leading_zeros and value.isdigit():
+        value = value.lstrip("0") or "0"
+        
+    return value
+
+def clean_value(value):
+    if pd.isna(value):
+        return ""
+    return str(value).replace("\xa0", " ").strip(' "')
+
+def read_csv_safely(filepath, required_columns):
+    for encoding in ("utf-8-sig", "utf-8", "cp1251"):
+        for separator in (";", ","):
+            try:
+                df = pd.read_csv(filepath, sep=separator, encoding=encoding, dtype=str, keep_default_na=False, skip_blank_lines=True)
+                temp_cols = df.columns.astype(str).str.replace("\xa0", " ", regex=False).str.strip(' "')
+                if all(col in temp_cols for col in required_columns):
+                    df.columns = temp_cols
+                    return df
+            except Exception:
+                continue
+    raise ValueError(f"Не удалось прочитать файл '{filepath.name}' или отсутствуют колонки: {', '.join(required_columns)}")
+
+def find_reference_file(prefix, program_dir):
+    files = list(program_dir.glob(f"{prefix}*.csv"))
+    if not files:
+        raise FileNotFoundError(f"Не найден справочник '{prefix}*.csv' в папке:\n{program_dir}")
+    if len(files) > 1:
+        names = ", ".join(path.name for path in files)
+        raise ValueError(f"❌ НАЙДЕНО НЕСКОЛЬКО ФАЙЛОВ ДЛЯ '{prefix}': {names}\nОставьте только ОДИН файл.")
+    return files[0]
+
+def build_mapping(prefix, key_columns, target_columns, program_dir, drop_pediatric=False, strip_zeros_cols=None):
+    if isinstance(key_columns, str):
+        key_columns = [key_columns]
+        
+    if strip_zeros_cols is None:
+        strip_zeros_cols = []
+        
+    required_columns = key_columns + target_columns
+    
+    if drop_pediatric:
+        required_columns.append("Профиль МП")
+
+    filepath = find_reference_file(prefix, program_dir)
+    print(f"⏳ Загрузка смежного справочника: {filepath.name}...")
+    
+    unique_required_cols = list(dict.fromkeys(required_columns))
+    df = read_csv_safely(filepath, unique_required_cols)
+
+    if drop_pediatric and "Профиль МП" in df.columns:
+        mask = df["Профиль МП"].astype(str).str.lower().str.contains("детск", na=False)
+        dropped_count = mask.sum()
+        df = df[~mask].copy()
+        if dropped_count > 0:
+            print(f"   👶 Отфильтровано детских профилей: {dropped_count} шт.")
+
+    for col in key_columns:
+        should_strip = col in strip_zeros_cols
+        df[col] = df[col].map(lambda v: normalize_key(v, strip_leading_zeros=should_strip))
+        df = df[df[col] != ""].copy()
+    
+    for column in target_columns:
+        df[column] = df[column].map(clean_value)
+        
+    return df[key_columns + target_columns].drop_duplicates()
+
+def reorder_enriched_columns(df):
+    """Умная сортировка колонок с сохранением порядка из исходного файла."""
+    cols = list(df.columns)
+    
+    added_cols = ["Наименование", "Наименование операции", "Профиль койки ФОМС V020", "Тариф"]
+    for c in added_cols:
+        if c in cols:
+            cols.remove(c)
+            
+    final_cols = []
+    for col in cols:
+        final_cols.append(col)
+        
+        if col == "Код медицинской услуги":
+            if "Наименование" in df.columns:
+                final_cols.append("Наименование")
+                
+        elif col == "Код хирургической операции":
+            if "Наименование операции" in df.columns:
+                final_cols.append("Наименование операции")
+                
+    if "Профиль койки ФОМС V020" in df.columns:
+        final_cols.append("Профиль койки ФОМС V020")
+    if "Тариф" in df.columns:
+        final_cols.append("Тариф")
+        
+    return df[final_cols]
+
+def enrich_new_mscrit(df_new):
+    print("\n⚙️ Обогащение нового справочника (СЛИЯНИЕ БАЗ ДАННЫХ)...")
+    program_dir = get_program_dir()
+    
+    try:
+        profms_df = build_mapping(
+            prefix="profms", 
+            key_columns=["Код МС или ВМП", "Код диагноза"], 
+            target_columns=["МС или ВМП", "Профиль койки ФОМС V020"], 
+            program_dir=program_dir,
+            drop_pediatric=True,
+            strip_zeros_cols=["Код МС или ВМП"]
+        )
+        profms_df = profms_df.rename(columns={'Код МС или ВМП': '_join_mes', 'Код диагноза': '_join_diag'})
+
+        hopff_df = build_mapping("hopff", "Код опер.", ["Наимен.опер."], program_dir)
+        hopff_df = hopff_df.rename(columns={'Код опер.': '_join_oper'})
+
+        tarimu_df = build_mapping(
+            prefix="tarimu", 
+            key_columns="Код услуги", 
+            target_columns=["Тариф"], 
+            program_dir=program_dir,
+            strip_zeros_cols=["Код услуги"]
+        )
+        tarimu_df = tarimu_df.rename(columns={'Код услуги': '_join_mes'})
+        
+    except Exception as e:
+        print(f"\n{e}")
+        print("⚠️ Обогащение прервано.")
+        return None
+    
+    df_enriched = df_new.copy()
+    initial_len = len(df_enriched)
+    
+    df_enriched['_join_mes'] = df_enriched["Код медицинской услуги"].map(lambda x: normalize_key(x, strip_leading_zeros=True))
+    df_enriched['_join_oper'] = df_enriched["Код хирургической операции"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
+    df_enriched['_join_diag'] = df_enriched["Код диагноза"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
+
+    try:
+        df_enriched = df_enriched.merge(profms_df, on=['_join_mes', '_join_diag'], how='left')
+        df_enriched = df_enriched.merge(hopff_df, on=['_join_oper'], how='left', validate="m:1")
+        df_enriched = df_enriched.merge(tarimu_df, on=['_join_mes'], how='left', validate="m:1")
+    except pd.errors.MergeError as me:
+        print(f"\n❌ ОШИБКА ДАННЫХ: Найдено недопустимое дублирование ключей в справочниках hopff или tarimu.")
+        print(f"Техническая деталь: {me}")
+        return None
+    
+    df_enriched = df_enriched.rename(columns={
+        'МС или ВМП': 'Наименование',
+        'Наимен.опер.': 'Наименование операции'
+    })
+    
+    for col in ["Наименование", "Профиль койки ФОМС V020", "Наименование операции", "Тариф"]:
+        df_enriched[col] = df_enriched[col].fillna("")
+        
+    df_enriched = df_enriched.drop(columns=['_join_mes', '_join_oper', '_join_diag'])
+    df_enriched = reorder_enriched_columns(df_enriched)
+    
+    added_rows = len(df_enriched) - initial_len
+    if added_rows > 0:
+        print(f"   🔄 Из-за множественных профилей продублировано строк: {added_rows} шт.")
+        
+    print("✅ Обогащение успешно завершено!")
+    return df_enriched
+
+# ==========================================
+# 3. GUI ДЛЯ РАЗРЕШЕНИЯ КОНФЛИКТОВ
 # ==========================================
 
 def resolve_duplicates_gui(df, file_label, key_cols):
     dupes_df = df[df.duplicated(subset=key_cols, keep=False)].copy()
-    
-    if dupes_df.empty:
-        return df
+    if dupes_df.empty: return df
 
     print(f"\n⚠️ ВНИМАНИЕ: В {file_label} файле обнаружены конфликтующие дубликаты! Запуск GUI...")
-
     window = tk.Toplevel(root)
     window.title(f"Разрешение конфликтов: {file_label} файл")
     window.geometry("1200x650")
@@ -91,11 +283,9 @@ def resolve_duplicates_gui(df, file_label, key_cols):
 
     style = ttk.Style(window)
     style.theme_use("clam")
-
     style.configure("Treeview", background="#FFFFFF", foreground="#1F2937", rowheight=35,
                     fieldbackground="#FFFFFF", bordercolor="#E5E7EB", borderwidth=1, font=("Segoe UI", 10))
     style.map("Treeview", background=[("selected", "#DBEAFE")], foreground=[("selected", "#1E3A8A")])
-
     style.configure("Treeview.Heading", background="#F9FAFB", foreground="#374151",
                     font=("Segoe UI", 10, "bold"), borderwidth=1, relief="flat")
     style.map("Treeview.Heading", background=[("active", "#E5E7EB")])
@@ -142,14 +332,10 @@ def resolve_duplicates_gui(df, file_label, key_cols):
                     tree.item(item, values=vals)
 
     tree.bind('<ButtonRelease-1>', toggle_check)
-
     result_state = {'action': 'stop', 'indices_to_drop': []}
 
     def on_continue():
-        to_drop = []
-        for item_id in tree.get_children():
-            if tree.item(item_id, "values")[0] == '☑':
-                to_drop.append(item_to_df_index[item_id])
+        to_drop = [item_to_df_index[item_id] for item_id in tree.get_children() if tree.item(item_id, "values")[0] == '☑']
         result_state['action'] = 'continue'
         result_state['indices_to_drop'] = to_drop
         window.destroy()
@@ -178,34 +364,53 @@ def resolve_duplicates_gui(df, file_label, key_cols):
         return None
 
     df_cleaned = df.drop(index=result_state['indices_to_drop'])
-
     conflict_keys = set(dupes_df[key_cols].itertuples(index=False, name=None))
-    remaining_counts = (
-        df_cleaned.groupby(key_cols, dropna=False)
-        .size()
-        .to_dict()
-    )
-    invalid_keys = [
-        key for key in conflict_keys
-        if remaining_counts.get(key, 0) != 1
-    ]
+    remaining_counts = df_cleaned.groupby(key_cols, dropna=False).size().to_dict()
+    invalid_keys = [key for key in conflict_keys if remaining_counts.get(key, 0) != 1]
     
     if invalid_keys:
         print("\n❌ ОШИБКА: Вы удалили слишком много или слишком мало строк!")
         print("Для каждой конфликтной связки необходимо оставить РОВНО ОДНУ строку.")
-        print("Запустите программу заново и корректно разрешите конфликты.")
         return None
 
     print(f"✅ Успешно удалено конфликтующих строк: {len(result_state['indices_to_drop'])} шт.")
     return df_cleaned
 
 # ==========================================
-# 3. ЛОГИКА СРАВНЕНИЯ
+# 4. ФОРМАТИРОВАНИЕ EXCEL ЛИСТОВ
+# ==========================================
+
+def format_excel_sheet_fast(ws, df, sample_size=5000):
+    sample = df.head(sample_size)
+    for column_number, column_name in enumerate(df.columns, start=1):
+        lengths = sample[column_name].fillna("").astype(str).str.len()
+        data_width = int(lengths.max()) if not lengths.empty else 0
+        width = min(max(len(str(column_name)), data_width) + 3, 50)
+        ws.column_dimensions[get_column_letter(column_number)].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+def format_excel_sheet(ws):
+    for col in ws.columns:
+        max_length = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except: pass
+        ws.column_dimensions[col_letter].width = min(max_length + 3, 50)
+    
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+# ==========================================
+# 5. ГЛАВНАЯ ЛОГИКА
 # ==========================================
 
 def main():
     print("="*65)
-    print(" 📊 Сравнение справочников")
+    print(" 📊 Сравнение и обогащение справочников")
     print("="*65)
     
     print("\n[ШАГ 1] Выберите СТАРУЮ версию файла...")
@@ -261,7 +466,7 @@ def main():
             input("Нажмите Enter...")
             return
 
-    print("🔍 Анализ на конфликты (GUI)...")
+    print("\n🔍 Анализ на конфликты (GUI)...")
 
     df_old = resolve_duplicates_gui(df_old, "СТАРОМ", key_cols)
     if df_old is None: 
@@ -273,7 +478,13 @@ def main():
         input("Нажмите Enter для выхода...")
         return
 
-    print("🚀 Формирование отличий...")
+    df_new_enriched = enrich_new_mscrit(df_new)
+    
+    if df_new_enriched is None:
+        input("\nНажмите Enter для выхода...")
+        return
+
+    print("\n🚀 Формирование отличий...")
     
     df_old_idx = df_old.set_index(key_cols)
     df_new_idx = df_new.set_index(key_cols)
@@ -338,70 +549,75 @@ def main():
     print(f"   - Изменено строк: {changes_count} шт.")
     print(f"   - Изменено ячеек (всего): {total_changed_cells_count} шт.")
 
-    if not output_data:
-        print("\n🎉 Файлы абсолютно идентичны. Отчет не требуется.")
-        input("Нажмите Enter...")
-        return
-
     output_dir = os.path.dirname(new_file)
     output_filename = os.path.join(output_dir, 'Diff_Mscrit.xlsx')
     print(f"\n🎨 Формирование Excel-отчета...")
     
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Сравнение версий"
-
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True)
-    fill_added = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-    fill_removed = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-    fill_modified_row = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    fill_modified_cell = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
     border_thin = Border(left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
                          top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9'))
 
-    header = ['Статус'] + columns_list
-    ws.append(header)
+    # --- ЛИСТ 1: ОБОГАЩЕННЫЙ СПРАВОЧНИК ---
+    ws_enriched = wb.active
+    ws_enriched.title = "Обогащенный справочник"
     
-    for cell in ws[1]:
+    enriched_cols = list(df_new_enriched.columns)
+    ws_enriched.append(enriched_cols)
+    
+    for cell in ws_enriched[1]:
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border_thin
+        
+    for row in df_new_enriched.itertuples(index=False, name=None):
+        ws_enriched.append(row)
+            
+    format_excel_sheet_fast(ws_enriched, df_new_enriched)
+    
+    ws_diff = wb.create_sheet(title="Сравнение версий")
 
-    for row_idx_offset, (row_data, status, changed_cols) in enumerate(output_data):
-        ws.append(row_data)
-        current_row = ws[row_idx_offset + 2] 
-        row_fill = fill_added if status == 'added' else fill_removed if status == 'removed' else fill_modified_row
+    # --- ЛИСТ 2: СРАВНЕНИЕ ---
+    if output_data:
+        fill_added = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        fill_removed = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        fill_modified_row = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        fill_modified_cell = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
 
-        for cell_idx, cell in enumerate(current_row):
+        header = ['Статус'] + columns_list
+        ws_diff.append(header)
+        
+        for cell in ws_diff[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = border_thin
-            cell.alignment = Alignment(vertical="center")
-            if status == 'modified' and cell_idx in changed_cols:
-                cell.fill = fill_modified_cell
-                cell.font = Font(bold=True, color="9C0006")
-            else:
-                cell.fill = row_fill
 
-    for col in ws.columns:
-        max_length = 0
-        col_letter = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        ws.column_dimensions[col_letter].width = min(max_length + 3, 50)
+        for row_idx_offset, (row_data, status, changed_cols) in enumerate(output_data):
+            ws_diff.append(row_data)
+            current_row = ws_diff[row_idx_offset + 2] 
+            row_fill = fill_added if status == 'added' else fill_removed if status == 'removed' else fill_modified_row
 
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
+            for cell_idx, cell in enumerate(current_row):
+                cell.border = border_thin
+                cell.alignment = Alignment(vertical="center")
+                if status == 'modified' and cell_idx in changed_cols:
+                    cell.fill = fill_modified_cell
+                    cell.font = Font(bold=True, color="9C0006")
+                else:
+                    cell.fill = row_fill
+
+        format_excel_sheet(ws_diff)
+    else:
+        ws_diff.append(["Файлы абсолютно идентичны. Отчет не требуется."])
 
     try:
         wb.save(output_filename)
         print(f"\n🚀 ГОТОВО! Файл сохранен: {output_filename}")
     except PermissionError:
-        print(f"\n❌ ОШИБКА ДОСТУПА: Не удалось сохранить файл {output_filename}.")
+        print(f"\n❌ ОШИБКА ДОСТУПА: Не удалось сохранить файл {output_filename}. Возможно, он открыт в Excel.")
         
     input("\nНажмите Enter, чтобы выйти...")
 
