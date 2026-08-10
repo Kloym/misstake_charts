@@ -65,6 +65,11 @@ def load_and_clean_data(filepath, file_label):
     df = df.fillna('')
     for col in df.columns:
         df[col] = df[col].astype(str).str.replace(r'\xa0', ' ', regex=True).str.strip(' "')
+
+    bool_keywords = ["обязательность", "использован", "допустимость", "критерии", "архивност"]
+    for col in df.columns:
+        if any(kw in col.lower() for kw in bool_keywords):
+            df[col] = df[col].replace({'0': 'Нет', '1': 'Да', '0.0': 'Нет', '1.0': 'Да'})
         
     df = df[df.astype(bool).any(axis=1)]
 
@@ -85,11 +90,6 @@ def get_program_dir():
     return Path(__file__).resolve().parent
 
 def normalize_key(value, strip_leading_zeros=False):
-    """
-    Нормализация ключей. 
-    Флаг strip_leading_zeros=True применяем ТОЛЬКО для кодов МЭС/услуг,
-    чтобы не испортить коды операций и диагнозов.
-    """
     if pd.isna(value):
         return ""
     
@@ -172,7 +172,6 @@ def build_mapping(prefix, key_columns, target_columns, program_dir, drop_pediatr
     return df[key_columns + target_columns].drop_duplicates()
 
 def reorder_enriched_columns(df):
-    """Умная сортировка колонок с сохранением порядка из исходного файла."""
     cols = list(df.columns)
     
     added_cols = ["Наименование", "Наименование операции", "Профиль койки ФОМС V020", "Тариф"]
@@ -183,14 +182,10 @@ def reorder_enriched_columns(df):
     final_cols = []
     for col in cols:
         final_cols.append(col)
-        
-        if col == "Код медицинской услуги":
-            if "Наименование" in df.columns:
-                final_cols.append("Наименование")
-                
-        elif col == "Код хирургической операции":
-            if "Наименование операции" in df.columns:
-                final_cols.append("Наименование операции")
+        if col == "Код медицинской услуги" and "Наименование" in df.columns:
+            final_cols.append("Наименование")
+        elif col == "Код хирургической операции" and "Наименование операции" in df.columns:
+            final_cols.append("Наименование операции")
                 
     if "Профиль койки ФОМС V020" in df.columns:
         final_cols.append("Профиль койки ФОМС V020")
@@ -213,10 +208,10 @@ def enrich_new_mscrit(df_new):
             strip_zeros_cols=["Код МС или ВМП"]
         )
         profms_df = profms_df.rename(columns={'Код МС или ВМП': '_join_mes', 'Код диагноза': '_join_diag'})
-
+        
         hopff_df = build_mapping("hopff", "Код опер.", ["Наимен.опер."], program_dir)
         hopff_df = hopff_df.rename(columns={'Код опер.': '_join_oper'})
-
+        
         tarimu_df = build_mapping(
             prefix="tarimu", 
             key_columns="Код услуги", 
@@ -237,7 +232,7 @@ def enrich_new_mscrit(df_new):
     df_enriched['_join_mes'] = df_enriched["Код медицинской услуги"].map(lambda x: normalize_key(x, strip_leading_zeros=True))
     df_enriched['_join_oper'] = df_enriched["Код хирургической операции"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
     df_enriched['_join_diag'] = df_enriched["Код диагноза"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
-
+    
     try:
         df_enriched = df_enriched.merge(profms_df, on=['_join_mes', '_join_diag'], how='left')
         df_enriched = df_enriched.merge(hopff_df, on=['_join_oper'], how='left', validate="m:1")
@@ -478,6 +473,7 @@ def main():
         input("Нажмите Enter для выхода...")
         return
 
+    # >>> ИНТЕГРАЦИЯ ОБОГАЩЕНИЯ <<<
     df_new_enriched = enrich_new_mscrit(df_new)
     
     if df_new_enriched is None:
@@ -559,10 +555,24 @@ def main():
     border_thin = Border(left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
                          top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9'))
 
-    # --- ЛИСТ 1: ОБОГАЩЕННЫЙ СПРАВОЧНИК ---
+    # --- ЛИСТ 1: ОБОГАЩЕННЫЙ СПРАВОЧНИК (БЫСТРАЯ ЗАПИСЬ И НАСТРОЙКА) ---
     ws_enriched = wb.active
     ws_enriched.title = "Обогащенный справочник"
     
+    # ПРАВКА 2: Очистка МЭС, начинающихся на '1' (кроме '183010')
+    if "Код медицинской услуги" in df_new_enriched.columns:
+        mes_codes = df_new_enriched["Код медицинской услуги"].map(
+            lambda value: normalize_key(value, strip_leading_zeros=True)
+        )
+        remove_mask = mes_codes.str.startswith("1") & mes_codes.ne("183010")
+        removed_count = int(remove_mask.sum())
+        df_new_enriched = df_new_enriched.loc[~remove_mask].copy()
+        print(f"   🧹 Удалено МЭС, начинающихся с '1': {removed_count} шт.")
+        
+    # ПРАВКА 3: Удаление столбца "Критерии экстренности госпитализации 'самотёк'" с первого листа
+    cols_to_drop = [c for c in df_new_enriched.columns if "критерии экстренности" in c.lower()]
+    df_new_enriched = df_new_enriched.drop(columns=cols_to_drop, errors='ignore')
+
     enriched_cols = list(df_new_enriched.columns)
     ws_enriched.append(enriched_cols)
     
@@ -572,6 +582,7 @@ def main():
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border_thin
         
+    # Быстрая запись строк без наложения границ
     for row in df_new_enriched.itertuples(index=False, name=None):
         ws_enriched.append(row)
             
@@ -579,7 +590,7 @@ def main():
     
     ws_diff = wb.create_sheet(title="Сравнение версий")
 
-    # --- ЛИСТ 2: СРАВНЕНИЕ ---
+    # --- ЛИСТ 2: СРАВНЕНИЕ (DIFF) ---
     if output_data:
         fill_added = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         fill_removed = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
