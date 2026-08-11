@@ -70,6 +70,8 @@ def load_and_clean_data(filepath, file_label):
     for col in df.columns:
         if any(kw in col.lower() for kw in bool_keywords):
             df[col] = df[col].replace({'0': 'Нет', '1': 'Да', '0.0': 'Нет', '1.0': 'Да'})
+        elif "анестез" in col.lower():
+            df[col] = df[col].replace({'0': 'Местная', '1': 'Общая', '0.0': 'Местная', '1.0': 'Общая'})
         
     df = df[df.astype(bool).any(axis=1)]
 
@@ -172,30 +174,40 @@ def build_mapping(prefix, key_columns, target_columns, program_dir, drop_pediatr
     return df[key_columns + target_columns].drop_duplicates()
 
 def reorder_enriched_columns(df):
-    cols = list(df.columns)
+    """Сортировка колонок через словарь правил"""
+
+    insert_rules = {
+        "Код медицинской услуги": "Наименование",
+        "Код хирургической операции": "Наименование операции"
+    }
     
-    added_cols = ["Наименование", "Наименование операции", "Профиль койки ФОМС V020", "Тариф"]
-    for c in added_cols:
-        if c in cols:
-            cols.remove(c)
-            
+    # 2. Колонки, которые всегда идут в конец
+    tail_cols = ["Профиль койки ФОМС V020", "Тариф"]
+    
+    # Собираем все добавленные колонки в одно множество для быстрой очистки
+    added_cols = set(list(insert_rules.values()) + tail_cols)
+
+    base_cols = [col for col in df.columns if col not in added_cols]
+    
     final_cols = []
-    for col in cols:
+    
+    # 4. Собираем новый список, автоматически применяя правила из словаря
+    for col in base_cols:
         final_cols.append(col)
-        if col == "Код медицинской услуги" and "Наименование" in df.columns:
-            final_cols.append("Наименование")
-        elif col == "Код хирургической операции" and "Наименование операции" in df.columns:
-            final_cols.append("Наименование операции")
-                
-    if "Профиль койки ФОМС V020" in df.columns:
-        final_cols.append("Профиль койки ФОМС V020")
-    if "Тариф" in df.columns:
-        final_cols.append("Тариф")
         
+        target_col = insert_rules.get(col)
+        if target_col and target_col in df.columns:
+            final_cols.append(target_col)
+            
+    # 5. Добавляем хвост
+    for col in tail_cols:
+        if col in df.columns:
+            final_cols.append(col)
+            
     return df[final_cols]
 
 def enrich_new_mscrit(df_new):
-    print("\n⚙️ Обогащение нового справочника (СЛИЯНИЕ БАЗ ДАННЫХ)...")
+    print("\n⚙️ Обогащение нового справочника...")
     program_dir = get_program_dir()
     
     try:
@@ -461,7 +473,7 @@ def main():
             input("Нажмите Enter...")
             return
 
-    print("\n🔍 Анализ на конфликты (GUI)...")
+    print("\n🔍 Анализ на конфликты...")
 
     df_old = resolve_duplicates_gui(df_old, "СТАРОМ", key_cols)
     if df_old is None: 
@@ -555,7 +567,7 @@ def main():
     border_thin = Border(left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
                          top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9'))
 
-    # --- ЛИСТ 1: ОБОГАЩЕННЫЙ СПРАВОЧНИК (БЫСТРАЯ ЗАПИСЬ И НАСТРОЙКА) ---
+    # --- ЛИСТ 1: ОБОГАЩЕННЫЙ СПРАВОЧНИК ---
     ws_enriched = wb.active
     ws_enriched.title = "Обогащенный справочник"
     
@@ -568,9 +580,9 @@ def main():
         removed_count = int(remove_mask.sum())
         df_new_enriched = df_new_enriched.loc[~remove_mask].copy()
         print(f"   🧹 Удалено МЭС, начинающихся с '1': {removed_count} шт.")
-        
-    # ПРАВКА 3: Удаление столбца "Критерии экстренности госпитализации 'самотёк'" с первого листа
-    cols_to_drop = [c for c in df_new_enriched.columns if "критерии экстренности" in c.lower()]
+
+    # ПРАВКА 3: Удаление столбца "Минимальное количество операций" с первого листа
+    cols_to_drop = [c for c in df_new_enriched.columns if "минимальное количество" in c.lower()]
     df_new_enriched = df_new_enriched.drop(columns=cols_to_drop, errors='ignore')
 
     enriched_cols = list(df_new_enriched.columns)
@@ -581,8 +593,7 @@ def main():
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border_thin
-        
-    # Быстрая запись строк без наложения границ
+
     for row in df_new_enriched.itertuples(index=False, name=None):
         ws_enriched.append(row)
             
@@ -590,7 +601,7 @@ def main():
     
     ws_diff = wb.create_sheet(title="Сравнение версий")
 
-    # --- ЛИСТ 2: СРАВНЕНИЕ (DIFF) ---
+    # --- ЛИСТ 2: СРАВНЕНИЕ ---
     if output_data:
         fill_added = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         fill_removed = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
