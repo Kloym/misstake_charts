@@ -258,9 +258,22 @@ def enrich_new_mscrit(df_new):
         'МС или ВМП': 'Наименование',
         'Наимен.опер.': 'Наименование операции'
     })
-    
-    for col in ["Наименование", "Профиль койки ФОМС V020", "Наименование операции", "Тариф"]:
-        df_enriched[col] = df_enriched[col].fillna("")
+
+    text_cols = ["Наименование", "Профиль койки ФОМС V020", "Наименование операции"]
+    for col in text_cols:
+        if col in df_enriched.columns:
+            df_enriched[col] = df_enriched[col].fillna("")
+            
+    if "Тариф" in df_enriched.columns:
+        df_enriched["Тариф"] = pd.to_numeric(
+            df_enriched["Тариф"]
+            .astype(str)
+            .str.replace("\xa0", "", regex=False)
+            .str.replace(" ", "", regex=False)
+            .str.replace(",", ".", regex=False)
+            .str.strip(),
+            errors="coerce",
+        )
         
     df_enriched = df_enriched.drop(columns=['_join_mes', '_join_oper', '_join_diag'])
     df_enriched = reorder_enriched_columns(df_enriched)
@@ -392,7 +405,7 @@ def format_excel_sheet_fast(ws, df, sample_size=5000):
     for column_number, column_name in enumerate(df.columns, start=1):
         lengths = sample[column_name].fillna("").astype(str).str.len()
         data_width = int(lengths.max()) if not lengths.empty else 0
-        width = min(max(len(str(column_name)), data_width) + 3, 50)
+        width = min(max(12, data_width + 3), 25)
         ws.column_dimensions[get_column_letter(column_number)].width = width
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
@@ -406,10 +419,32 @@ def format_excel_sheet(ws):
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
             except: pass
-        ws.column_dimensions[col_letter].width = min(max_length + 3, 50)
+        ws.column_dimensions[col_letter].width = min(max_length + 3, 25)
     
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
+
+def filter_mes_codes(df):
+    """Фильтрует МЭС: убирает начинающиеся на '1' (кроме '183010') и все МЭС > 201000."""
+    if "Код медицинской услуги" in df.columns:
+        mes_norm = df["Код медицинской услуги"].map(
+            lambda v: normalize_key(v, strip_leading_zeros=True)
+        )
+        # 1. Начинается на '1' и НЕ равно '183010'
+        mask_start_1 = mes_norm.str.startswith("1") & mes_norm.ne("183010")
+        
+        # 2. Числовой код больше 201000 (захватывает и 201..., и 300...)
+        mes_nums = pd.to_numeric(mes_norm, errors="coerce")
+        mask_gt_201k = mes_nums > 201000
+        
+        remove_mask = mask_start_1 | mask_gt_201k
+        removed_cnt = int(remove_mask.sum())
+        if removed_cnt > 0:
+            print(f"   🧹 Исключено нецелевых МЭС (на '1' кроме 183010, и > 201000): {removed_cnt} шт.")
+        return df.loc[~remove_mask].copy()
+    return df
+
+
 
 # ==========================================
 # 5. ГЛАВНАЯ ЛОГИКА
@@ -435,6 +470,10 @@ def main():
 
     df_old = load_and_clean_data(old_file, "СТАРОГО")
     df_new = load_and_clean_data(new_file, "НОВОГО")
+
+    # >>> Фильтрация МЭС до начала анализа <<<
+    df_old = filter_mes_codes(df_old)
+    df_new = filter_mes_codes(df_new)
 
     old_cols = list(df_old.columns)
     new_cols = list(df_new.columns)
@@ -476,7 +515,7 @@ def main():
     print("\n🔍 Анализ на конфликты...")
 
     df_old = resolve_duplicates_gui(df_old, "СТАРОМ", key_cols)
-    if df_old is None: 
+    if df_old is None:
         input("Нажмите Enter для выхода...")
         return
         
@@ -485,7 +524,7 @@ def main():
         input("Нажмите Enter для выхода...")
         return
 
-    # >>> ИНТЕГРАЦИЯ ОБОГАЩЕНИЯ <<<
+    # >>> ОБОГАЩЕНИЕ <<<
     df_new_enriched = enrich_new_mscrit(df_new)
     
     if df_new_enriched is None:
@@ -570,32 +609,31 @@ def main():
     # --- ЛИСТ 1: ОБОГАЩЕННЫЙ СПРАВОЧНИК ---
     ws_enriched = wb.active
     ws_enriched.title = "Обогащенный справочник"
-    
-    # ПРАВКА 2: Очистка МЭС, начинающихся на '1' (кроме '183010')
-    if "Код медицинской услуги" in df_new_enriched.columns:
-        mes_codes = df_new_enriched["Код медицинской услуги"].map(
-            lambda value: normalize_key(value, strip_leading_zeros=True)
-        )
-        remove_mask = mes_codes.str.startswith("1") & mes_codes.ne("183010")
-        removed_count = int(remove_mask.sum())
-        df_new_enriched = df_new_enriched.loc[~remove_mask].copy()
-        print(f"   🧹 Удалено МЭС, начинающихся с '1': {removed_count} шт.")
 
-    # ПРАВКА 3: Удаление столбца "Минимальное количество операций" с первого листа
     cols_to_drop = [c for c in df_new_enriched.columns if "минимальное количество" in c.lower()]
     df_new_enriched = df_new_enriched.drop(columns=cols_to_drop, errors='ignore')
 
     enriched_cols = list(df_new_enriched.columns)
     ws_enriched.append(enriched_cols)
     
+    ws_enriched.row_dimensions[1].height = 45
     for cell in ws_enriched[1]:
         cell.fill = header_fill
         cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border_thin
 
+    # Безопасная запись: заменяем pd.isna на None для openpyxl
     for row in df_new_enriched.itertuples(index=False, name=None):
-        ws_enriched.append(row)
+        ws_enriched.append([None if pd.isna(value) else value for value in row])
+        
+    # Форматирование Тарифа для Excel
+    if "Тариф" in df_new_enriched.columns:
+        tariff_col_idx = df_new_enriched.columns.get_loc("Тариф") + 1
+        for row_idx in range(2, ws_enriched.max_row + 1):
+            cell = ws_enriched.cell(row=row_idx, column=tariff_col_idx)
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
             
     format_excel_sheet_fast(ws_enriched, df_new_enriched)
     
@@ -610,11 +648,12 @@ def main():
 
         header = ['Статус'] + columns_list
         ws_diff.append(header)
-        
+
+        ws_diff.row_dimensions[1].height = 45
         for cell in ws_diff[1]:
             cell.fill = header_fill
             cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border_thin
 
         for row_idx_offset, (row_data, status, changed_cols) in enumerate(output_data):
@@ -642,10 +681,3 @@ def main():
         print(f"\n❌ ОШИБКА ДОСТУПА: Не удалось сохранить файл {output_filename}. Возможно, он открыт в Excel.")
         
     input("\nНажмите Enter, чтобы выйти...")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"\n❌ Произошла непредвиденная ошибка: {e}")
-        input("Нажмите Enter для выхода...")
