@@ -183,23 +183,19 @@ def reorder_enriched_columns(df):
     
     # 2. Колонки, которые всегда идут в конец
     tail_cols = ["Профиль койки ФОМС V020", "Тариф"]
-    
-    # Собираем все добавленные колонки в одно множество для быстрой очистки
     added_cols = set(list(insert_rules.values()) + tail_cols)
 
     base_cols = [col for col in df.columns if col not in added_cols]
     
     final_cols = []
-    
-    # 4. Собираем новый список, автоматически применяя правила из словаря
+
     for col in base_cols:
         final_cols.append(col)
         
         target_col = insert_rules.get(col)
         if target_col and target_col in df.columns:
             final_cols.append(target_col)
-            
-    # 5. Добавляем хвост
+
     for col in tail_cols:
         if col in df.columns:
             final_cols.append(col)
@@ -221,6 +217,66 @@ def enrich_new_mscrit(df_new):
         )
         profms_df = profms_df.rename(columns={'Код МС или ВМП': '_join_mes', 'Код диагноза': '_join_diag'})
         
+        # Заполняем пустые наименования внутри одного МЭС + диагноза
+        profms_df["МС или ВМП"] = (
+            profms_df["МС или ВМП"]
+            .replace("", pd.NA)
+            .groupby([profms_df["_join_mes"], profms_df["_join_diag"]])
+            .transform(lambda values: values.ffill().bfill())
+            .fillna("")
+        )
+        
+        # Нормализуем наименование только для проверки:
+        profms_df["_name_normalized"] = (
+            profms_df["МС или ВМП"]
+            .astype(str)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+            .str.casefold()
+        )
+        
+        name_conflicts = (
+            profms_df[profms_df["_name_normalized"].ne("")]
+            .groupby(["_join_mes", "_join_diag"])["_name_normalized"]
+            .nunique()
+        )
+        
+        name_conflicts = name_conflicts[name_conflicts > 1]
+        
+        if not name_conflicts.empty:
+            examples = list(name_conflicts.index[:10])
+            raise ValueError(
+                f"Для {len(name_conflicts)} ключей найдено несколько действительно "
+                f"разных наименований. Примеры: {examples}"
+            )
+            
+        # Для одного ключа устанавливаем единый вариант написания наименования.
+        # Будет выбрано первое непустое значение из справочника.
+        canonical_names = (
+            profms_df[profms_df["МС или ВМП"].ne("")]
+            .groupby(["_join_mes", "_join_diag"])["МС или ВМП"]
+            .first()
+        )
+        
+        profms_df["МС или ВМП"] = [
+            canonical_names.get((mes, diag), "")
+            for mes, diag in zip(
+                profms_df["_join_mes"],
+                profms_df["_join_diag"],
+            )
+        ]
+        profms_df = profms_df.drop(columns=["_name_normalized"])
+
+        # Обработка профилей
+        profms_df = profms_df[profms_df["Профиль койки ФОМС V020"].ne("")].copy()
+        profms_df = profms_df.drop_duplicates(
+            subset=[
+                "_join_mes",
+                "_join_diag",
+                "Профиль койки ФОМС V020",
+            ]
+        )
+
         hopff_df = build_mapping("hopff", "Код опер.", ["Наимен.опер."], program_dir)
         hopff_df = hopff_df.rename(columns={'Код опер.': '_join_oper'})
         
@@ -240,13 +296,20 @@ def enrich_new_mscrit(df_new):
     
     df_enriched = df_new.copy()
     initial_len = len(df_enriched)
+
+    cols_to_drop_safe = ["Наименование", "Наименование операции", "Профиль койки ФОМС V020", "Тариф"]
+    existing_cols = [col for col in cols_to_drop_safe if col in df_enriched.columns]
     
+    if existing_cols:
+        print(f"   ⚠️ Внимание: Будут перезаписаны существующие колонки: {', '.join(existing_cols)}")
+        df_enriched = df_enriched.drop(columns=existing_cols)
+
     df_enriched['_join_mes'] = df_enriched["Код медицинской услуги"].map(lambda x: normalize_key(x, strip_leading_zeros=True))
     df_enriched['_join_oper'] = df_enriched["Код хирургической операции"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
     df_enriched['_join_diag'] = df_enriched["Код диагноза"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
     
     try:
-        df_enriched = df_enriched.merge(profms_df, on=['_join_mes', '_join_diag'], how='left')
+        df_enriched = df_enriched.merge(profms_df, on=['_join_mes', '_join_diag'], how='left', validate="m:m")
         df_enriched = df_enriched.merge(hopff_df, on=['_join_oper'], how='left', validate="m:1")
         df_enriched = df_enriched.merge(tarimu_df, on=['_join_mes'], how='left', validate="m:1")
     except pd.errors.MergeError as me:
@@ -263,7 +326,7 @@ def enrich_new_mscrit(df_new):
     for col in text_cols:
         if col in df_enriched.columns:
             df_enriched[col] = df_enriched[col].fillna("")
-            
+
     if "Тариф" in df_enriched.columns:
         df_enriched["Тариф"] = pd.to_numeric(
             df_enriched["Тариф"]
@@ -681,3 +744,10 @@ def main():
         print(f"\n❌ ОШИБКА ДОСТУПА: Не удалось сохранить файл {output_filename}. Возможно, он открыт в Excel.")
         
     input("\nНажмите Enter, чтобы выйти...")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"\n❌ Произошла непредвиденная ошибка: {e}")
+        input("Нажмите Enter для выхода...")
