@@ -175,20 +175,21 @@ def build_mapping(prefix, key_columns, target_columns, program_dir, drop_pediatr
 
 def reorder_enriched_columns(df):
     """Сортировка колонок через словарь правил"""
-
     insert_rules = {
         "Код медицинской услуги": "Наименование",
         "Код хирургической операции": "Наименование операции"
     }
-    
-    # 2. Колонки, которые всегда идут в конец
-    tail_cols = ["Профиль койки ФОМС V020", "Тариф"]
+
+    tail_cols = [
+        "Код профиля койки ФОМС V020", 
+        "Профиль койки ФОМС V020", 
+        "Тариф"
+    ]
     added_cols = set(list(insert_rules.values()) + tail_cols)
 
     base_cols = [col for col in df.columns if col not in added_cols]
     
     final_cols = []
-
     for col in base_cols:
         final_cols.append(col)
         
@@ -204,81 +205,168 @@ def reorder_enriched_columns(df):
 
 def enrich_new_mscrit(df_new):
     print("\n⚙️ Обогащение нового справочника...")
+
+    required_columns = {
+        "Код медицинской услуги",
+        "Код хирургической операции",
+        "Код диагноза",
+    }
+    missing_columns = required_columns.difference(df_new.columns)
+    if missing_columns:
+        raise ValueError(f"❌ В mscrit отсутствуют обязательные колонки: {sorted(missing_columns)}")
+
+    technical_columns = {"_source_row_id", "_join_mes", "_join_oper", "_join_diag"}
+    collisions = technical_columns.intersection(df_new.columns)
+    if collisions:
+        raise ValueError(
+            f"❌ Во входной таблице уже существуют зарезервированные "
+            f"технические колонки: {sorted(collisions)}"
+        )
+    
     program_dir = get_program_dir()
     
     try:
         profms_df = build_mapping(
             prefix="profms", 
             key_columns=["Код МС или ВМП", "Код диагноза"], 
-            target_columns=["МС или ВМП", "Профиль койки ФОМС V020"], 
+            target_columns=["МС или ВМП", "Код профиля койки ФОМС V020", "Профиль койки ФОМС V020"], 
             program_dir=program_dir,
             drop_pediatric=True,
             strip_zeros_cols=["Код МС или ВМП"]
         )
         profms_df = profms_df.rename(columns={'Код МС или ВМП': '_join_mes', 'Код диагноза': '_join_diag'})
+
+        profms_text_columns = [
+            "МС или ВМП",
+            "Код профиля койки ФОМС V020",
+            "Профиль койки ФОМС V020",
+        ]
+        for col in profms_text_columns:
+            profms_df[col] = (
+                profms_df[col]
+                .astype("string")
+                .fillna("")
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+            )
+
+        # Нормализация кода профиля техническим ключом
+        profms_df["_profile_code_norm"] = profms_df["Код профиля койки ФОМС V020"].map(
+            lambda value: normalize_key(value, strip_leading_zeros=True)
+        )
+
+        missing_profile_code = (
+            profms_df["Профиль койки ФОМС V020"].ne("") 
+            & profms_df["_profile_code_norm"].eq("")
+        )
+        if missing_profile_code.any():
+            examples = (
+                profms_df.loc[
+                    missing_profile_code,
+                    ["_join_mes", "_join_diag", "Профиль койки ФОМС V020"],
+                ]
+                .head(10)
+                .to_dict("records")
+            )
+            raise ValueError(
+                f"Для {int(missing_profile_code.sum())} строк profms заполнено "
+                f"название профиля, но отсутствует его код. Примеры: {examples}"
+            )
+
+        # Проверка конфликтов по нормализованному коду профиля
+        profms_df["_profile_name_norm"] = (
+            profms_df["Профиль койки ФОМС V020"]
+            .str.casefold()
+        )
+        profile_conflicts = (
+            profms_df.loc[
+                profms_df["_profile_name_norm"].ne("") 
+                & profms_df["_profile_code_norm"].ne("")
+            ]
+            .groupby(["_join_mes", "_join_diag", "_profile_code_norm"])["_profile_name_norm"]
+            .nunique()
+        )
+        profile_conflicts = profile_conflicts[profile_conflicts > 1]
         
-        # Заполняем пустые наименования внутри одного МЭС + диагноза
+        if not profile_conflicts.empty:
+            examples = list(profile_conflicts.index[:10])
+            raise ValueError(
+                f"Для {len(profile_conflicts)} связок "
+                f"'МЭС + диагноз + код профиля' найдены разные "
+                f"названия профиля. Примеры: {examples}"
+            )
+
+        # 1. Проверка и унификация названия МЭС до удаления дублей профилей
+        group_keys = [
+            profms_df["_join_mes"],
+            profms_df["_join_diag"],
+        ]
         profms_df["МС или ВМП"] = (
             profms_df["МС или ВМП"]
             .replace("", pd.NA)
-            .groupby([profms_df["_join_mes"], profms_df["_join_diag"]])
+            .groupby(group_keys)
             .transform(lambda values: values.ffill().bfill())
             .fillna("")
         )
-        
-        # Нормализуем наименование только для проверки:
-        profms_df["_name_normalized"] = (
+
+        profms_df["_mes_name_norm"] = (
             profms_df["МС или ВМП"]
-            .astype(str)
             .str.replace(r"\s+", " ", regex=True)
             .str.strip()
             .str.casefold()
         )
-        
-        name_conflicts = (
-            profms_df[profms_df["_name_normalized"].ne("")]
-            .groupby(["_join_mes", "_join_diag"])["_name_normalized"]
+        mes_name_conflicts = (
+            profms_df.loc[profms_df["_mes_name_norm"].ne("")]
+            .groupby(["_join_mes", "_join_diag"])["_mes_name_norm"]
             .nunique()
         )
+        mes_name_conflicts = mes_name_conflicts[mes_name_conflicts > 1]
         
-        name_conflicts = name_conflicts[name_conflicts > 1]
-        
-        if not name_conflicts.empty:
-            examples = list(name_conflicts.index[:10])
+        if not mes_name_conflicts.empty:
+            examples = list(mes_name_conflicts.index[:10])
             raise ValueError(
-                f"Для {len(name_conflicts)} ключей найдено несколько действительно "
-                f"разных наименований. Примеры: {examples}"
+                f"Для {len(mes_name_conflicts)} ключей 'МЭС + диагноз' "
+                f"найдены разные наименования. Примеры: {examples}"
             )
-            
-        # Для одного ключа устанавливаем единый вариант написания наименования.
-        # Будет выбрано первое непустое значение из справочника.
-        canonical_names = (
-            profms_df[profms_df["МС или ВМП"].ne("")]
-            .groupby(["_join_mes", "_join_diag"])["МС или ВМП"]
-            .first()
-        )
-        
-        profms_df["МС или ВМП"] = [
-            canonical_names.get((mes, diag), "")
-            for mes, diag in zip(
-                profms_df["_join_mes"],
-                profms_df["_join_diag"],
-            )
-        ]
-        profms_df = profms_df.drop(columns=["_name_normalized"])
 
-        # Обработка профилей
-        profms_df = profms_df[profms_df["Профиль койки ФОМС V020"].ne("")].copy()
+        def first_non_empty(values):
+            non_empty = values[values.ne("")]
+            return non_empty.iloc[0] if not non_empty.empty else ""
+
+        profms_df["МС или ВМП"] = (
+            profms_df
+            .groupby(["_join_mes", "_join_diag"])["МС или ВМП"]
+            .transform(first_non_empty)
+        )
+
+        profms_df["Код профиля койки ФОМС V020"] = profms_df["_profile_code_norm"]
+
+        profms_df = profms_df.loc[profms_df["Профиль койки ФОМС V020"].ne("")].copy()
         profms_df = profms_df.drop_duplicates(
             subset=[
                 "_join_mes",
                 "_join_diag",
-                "Профиль койки ФОМС V020",
+                "_profile_code_norm",
+            ],
+            keep="first",
+        )
+        profms_df = profms_df.drop(
+            columns=[
+                "_profile_name_norm", 
+                "_mes_name_norm", 
+                "_profile_code_norm"
             ]
         )
 
+        # Сборка остальных справочников
         hopff_df = build_mapping("hopff", "Код опер.", ["Наимен.опер."], program_dir)
         hopff_df = hopff_df.rename(columns={'Код опер.': '_join_oper'})
+        
+        # 4. Проверка дублей в hopff
+        hopff_duplicates = hopff_df["_join_oper"].duplicated(keep=False)
+        if hopff_duplicates.any():
+            examples = hopff_df.loc[hopff_duplicates, "_join_oper"].drop_duplicates().head(10).tolist()
+            raise ValueError(f"В hopff найдено несколько строк для одного кода операции. Примеры кодов: {examples}")
         
         tarimu_df = build_mapping(
             prefix="tarimu", 
@@ -289,15 +377,27 @@ def enrich_new_mscrit(df_new):
         )
         tarimu_df = tarimu_df.rename(columns={'Код услуги': '_join_mes'})
         
+        # 4. Проверка дублей в tarimu
+        tarimu_duplicates = tarimu_df["_join_mes"].duplicated(keep=False)
+        if tarimu_duplicates.any():
+            examples = tarimu_df.loc[tarimu_duplicates, "_join_mes"].drop_duplicates().head(10).tolist()
+            raise ValueError(f"В tarimu найдено несколько строк для одного кода услуги. Примеры кодов: {examples}")
+            
     except Exception as e:
         print(f"\n{e}")
         print("⚠️ Обогащение прервано.")
         return None
     
     df_enriched = df_new.copy()
-    initial_len = len(df_enriched)
-
-    cols_to_drop_safe = ["Наименование", "Наименование операции", "Профиль койки ФОМС V020", "Тариф"]
+    df_enriched["_source_row_id"] = range(len(df_enriched))
+    
+    cols_to_drop_safe = [
+        "Наименование", 
+        "Наименование операции", 
+        "Код профиля койки ФОМС V020", 
+        "Профиль койки ФОМС V020", 
+        "Тариф"
+    ]
     existing_cols = [col for col in cols_to_drop_safe if col in df_enriched.columns]
     
     if existing_cols:
@@ -308,25 +408,62 @@ def enrich_new_mscrit(df_new):
     df_enriched['_join_oper'] = df_enriched["Код хирургической операции"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
     df_enriched['_join_diag'] = df_enriched["Код диагноза"].map(lambda x: normalize_key(x, strip_leading_zeros=False))
     
-    try:
-        df_enriched = df_enriched.merge(profms_df, on=['_join_mes', '_join_diag'], how='left', validate="m:m")
-        df_enriched = df_enriched.merge(hopff_df, on=['_join_oper'], how='left', validate="m:1")
-        df_enriched = df_enriched.merge(tarimu_df, on=['_join_mes'], how='left', validate="m:1")
-    except pd.errors.MergeError as me:
-        print(f"\n❌ ОШИБКА ДАННЫХ: Найдено недопустимое дублирование ключей в справочниках hopff или tarimu.")
-        print(f"Техническая деталь: {me}")
-        return None
+    # Слияние с profms
+    df_enriched = df_enriched.merge(
+        profms_df, 
+        on=['_join_mes', '_join_diag'], 
+        how='left', 
+        validate="m:m",
+        indicator="_profms_merge"
+    )
+    
+    # Диагностика ненайденных профилей
+    unmatched = df_enriched["_profms_merge"].eq("left_only")
+    if unmatched.any():
+        missing_keys = (
+            df_enriched.loc[
+                unmatched,
+                ["Код медицинской услуги", "Код диагноза"],
+            ]
+            .drop_duplicates()
+        )
+        print(f"   ⚠️ Для {len(missing_keys)} уникальных ключей 'МЭС + диагноз' не найден профиль в profms.")
+        print(missing_keys.head(10).to_string(index=False))
+        
+    df_enriched = df_enriched.drop(columns="_profms_merge")
+    
+    # 5. Диагностика размножения (выполняется после profms)
+    matches_per_source = df_enriched.groupby("_source_row_id").size()
+    multi_profile_rows = int((matches_per_source > 1).sum())
+    extra_rows = int((matches_per_source - 1).clip(lower=0).sum())
+    
+    if multi_profile_rows > 0:
+        print(f"   🔄 Исходных строк с несколькими профилями: {multi_profile_rows} шт.")
+        print(f"   🔄 Дополнительно создано строк: {extra_rows} шт.")
+        
+    # Безопасное слияние с hopff и tarimu
+    df_enriched = df_enriched.merge(hopff_df, on=['_join_oper'], how='left', validate="m:1")
+    df_enriched = df_enriched.merge(tarimu_df, on=['_join_mes'], how='left', validate="m:1")
     
     df_enriched = df_enriched.rename(columns={
         'МС или ВМП': 'Наименование',
         'Наимен.опер.': 'Наименование операции'
     })
-
-    text_cols = ["Наименование", "Профиль койки ФОМС V020", "Наименование операции"]
+    
+    df_enriched = df_enriched.drop(columns=["_source_row_id", '_join_mes', '_join_oper', '_join_diag'])
+    
+    # Обработка пустых значений
+    text_cols = [
+        "Наименование", 
+        "Код профиля койки ФОМС V020", 
+        "Профиль койки ФОМС V020", 
+        "Наименование операции"
+    ]
     for col in text_cols:
         if col in df_enriched.columns:
             df_enriched[col] = df_enriched[col].fillna("")
-
+            
+    # Конвертация тарифа в числа
     if "Тариф" in df_enriched.columns:
         df_enriched["Тариф"] = pd.to_numeric(
             df_enriched["Тариф"]
@@ -338,14 +475,9 @@ def enrich_new_mscrit(df_new):
             errors="coerce",
         )
         
-    df_enriched = df_enriched.drop(columns=['_join_mes', '_join_oper', '_join_diag'])
     df_enriched = reorder_enriched_columns(df_enriched)
-    
-    added_rows = len(df_enriched) - initial_len
-    if added_rows > 0:
-        print(f"   🔄 Из-за множественных профилей продублировано строк: {added_rows} шт.")
-        
     print("✅ Обогащение успешно завершено!")
+    
     return df_enriched
 
 # ==========================================
