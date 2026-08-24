@@ -808,14 +808,26 @@ def main():
                 is_dead = str(group['Умер'].iloc[0]).strip().lower() == 'да'
             
             if is_dead:
-                last_mov = group.iloc[-1]
+                date_col = 'Дата выбытия'
+                if 'Дата выбытия_mov' in group.columns: 
+                    date_col = 'Дата выбытия_mov'
+                elif 'Дата выбытия_disch' in group.columns: 
+                    date_col = 'Дата выбытия_disch'
+
+                sorted_g = group.copy()
+                if date_col in sorted_g.columns:
+                    sorted_g['temp_sort_date'] = pd.to_datetime(sorted_g[date_col], dayfirst=True, errors='coerce')
+                    sorted_g = sorted_g.sort_values(by='temp_sort_date')
+                last_mov = sorted_g.iloc[-1]
+                
                 prer_code = str(last_mov.get('Код прерывания госпитализации', '')).split('.')[0].strip()
                 
                 if prer_code != '5':
                     last_dept = str(last_mov.get('Отделение', 'Неизвестно')).strip()
                     doc = _get_doc(last_mov)
                     temp_errors.append(f"META::{last_dept}::{doc}::ИБ {ib}: Ошибка прерывания: Пациент числится как умерший, но в последнем движении код прерывания указан '<b>{prer_code}</b>' вместо '<b>5</b>'.")
-                date_val = last_mov.get('Дата выбытия_mov', last_mov.get('Дата выбытия_disch', last_mov.get('Дата выбытия', '')))
+
+                date_val = last_mov.get(date_col, '')
                 date_str = str(date_val).strip()
                 
                 try:
@@ -828,9 +840,8 @@ def main():
                         discharge_date = None
                         
                     if discharge_date:
-                        ib_base = ib_str.split('-')[0].strip()
-                        dead_patients_dict[ib_base] = discharge_date
-                        print(f"💀 ИБ {ib_base}: пациент умер, дата выбытия зафиксирована как {discharge_date}")
+                        dead_patients_dict[ib_str] = discharge_date
+                        print(f"💀 ИБ {ib_str}: пациент умер, дата выбытия зафиксирована как {discharge_date}")
                 except Exception as e:
                     print(f"⚠️ Ошибка парсинга даты для умершего {ib_str}: {e}")
             
